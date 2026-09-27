@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Instructor Dashboard – Plan Room Trainer</title>
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="css/app.css">
+  <style>
+    main.dash { left: 0; }
+    .drop { border: 2px dashed #9fb1c6; border-radius: 12px; padding: 26px; text-align: center; background: #fff; margin-bottom: 16px; }
+    .drop.over { background: #eaf2ff; border-color: var(--blue); }
+    .grade-tbl td, .grade-tbl th { white-space: nowrap; }
+    .grade-tbl input { width: 3.6em; padding: 4px; }
+    .grade-tbl input.note { width: 12em; }
+    .ok { color: var(--green); font-weight: 700; } .no { color: var(--red); font-weight: 700; }
+    .pct { display: inline-block; min-width: 3em; }
+    .bar { display: inline-block; width: 60px; height: 8px; background: #e8ecf1; border-radius: 4px; vertical-align: middle; overflow: hidden; }
+    .bar i { display: block; height: 100%; background: var(--green); }
+    .sticky-name { position: sticky; left: 0; background: #fff; z-index: 1; }
+    .tbl-wrap { overflow-x: auto; }
+    .detail h3 { border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+    .detail pre { white-space: pre-wrap; background: #f7f9fb; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-family: inherit; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="logo">▦</span> Plan Room <b>Trainer</b></a>
+    <span class="proj">Instructor Dashboard</span>
+    <span class="spacer" style="flex:1"></span>
+    <a class="btn btn-sm" href="index.html">← Back to app</a>
+  </header>
+  <main class="dash" id="main"></main>
+  <div id="toasts" aria-live="polite"></div>
+
+  <script src="js/util.js"></script>
+  <script src="js/sample-sheets.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/training.js"></script>
+  <script src="js/quizzes.js"></script>
+  <script src="js/grading.js"></script>
+  <script src="js/instructor.js"></script>
+</body>
+</html>
