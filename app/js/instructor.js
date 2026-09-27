@@ -20,6 +20,7 @@
   const ASSESS = [
     ...["quiz1", "quiz2", "quiz3", "quiz4", "quiz5", "quiz6"].map((id, i) => ({ id, label: `Q${i + 1}`, title: Q.find(id).title, group: "Quizzes" })),
     ...[1, 2, 3, 4, 5, 6, 7].map((n) => ({ id: `lab${n}`, label: `L${n}`, title: `Lab ${n}`, group: "Labs" })),
+    { id: "att", label: "AT&T", title: "AT&T Reroof Blueprint Exercise", group: "Blueprint" },
     { id: "final", label: "Final", title: "Final exam (written + practical)", group: "Final" },
   ];
 
@@ -62,6 +63,7 @@
         lab5: [qs("lab5", "Lab 5 conflict worksheet"), rb("Lab 5 RFI + submittal (auto rubric)", G.lab5())],
         lab6: [rb("Lab 6 field day (auto rubric)", G.lab6()), scale(qs("lab6", "Lab 6 compare worksheet"), 4)],
         lab7: [rb("Lab 7 as-builts (auto rubric)", G.lab7())],
+        att: [qs("att", "AT&T Reroof Blueprint Exercise")],
         final: [qs("final", "Final – written"), rb("Final – practical (auto rubric)", G.finalPractical())],
       };
       r.grades = {};

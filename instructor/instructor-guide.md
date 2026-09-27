@@ -85,6 +85,7 @@ they send it, so grading works by file:
 | Lab 5 | Conflict worksheet vs. key + RFI rubric (subject, references, suggestion, impacts, sent/assigned) + submittal + SEE RFI stamp |
 | Lab 6 | Rubric from toolbox talk, JHA, photos, inspection request, daily report + compare worksheet |
 | Lab 7 | Rubric from as-built markups, dimensions, RFI reference, AS-BUILT stamps, exports |
+| AT&T Reroof Blueprint Exercise | 20 short answers on the real AT&T plan set, scored by keywords 👁 (model answers shown in the detail view) |
 | Final | Written part vs. key + practical rubric from their project |
 | Training missions | All 32 re-checked from their actual work |
 
@@ -102,6 +103,20 @@ choices in their own shuffled order, so "the answer is B" can't be shared.
 
 **Keeping the key safe:** grade on your own computer. The dashboard remembers the key in that
 browser – click **Forget key** when you're done on any shared computer.
+
+## AT&T Reroof Blueprint Exercise (real plan set)
+A 20-question exercise on a real bid set – *AT&T Upper Roof Replacement, 217 W. Acequia Ave, Visalia*
+(11 sheets). Good for **Week 3A** (blueprints & details) and **3B** (roofing specs & details).
+
+- **The plans are not on the public site.** Every sheet is stamped *"Proprietary AT&T information – not
+  for general use or disclosure outside AT&T"*, so the PDF lives in the private
+  `jatc-plangrid-instructor-keys` repo (`plans/`). Hand it out through your LMS, a shared drive or
+  print it; apprentices load it in the app with **Sheets → Upload**. Don't post it publicly.
+- Apprentices answer in the app (**Quizzes & Worksheets → AT&T Reroof Blueprint Exercise**) or on the
+  printable [worksheet](../docs/quizzes/att-reroof-exercise.md).
+- Answers and sheet references: `answer-keys.md` in the private repo. The dashboard scores by keywords
+  and shows the model answer next to each response – #8, #9 and #20 are open-ended, so read them and
+  override as needed.
 
 ## Tips
 - Project the app with the browser zoomed to 125%.

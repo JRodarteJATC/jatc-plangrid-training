@@ -40,7 +40,7 @@ PT.grading = (() => {
     if (q.type === "mc") return q.options[k.a];
     if (q.type === "multi") return k.a.map((i) => q.options[i]).join("; ");
     if (q.type === "num") return `${k.v}${k.pct ? ` (±${k.pct}%)` : k.tol ? ` (±${k.tol})` : ""} ${q.unit || ""}`;
-    return "keywords: " + (k.kw || []).map((g) => g.join("/")).join(" + ");
+    return (k.model ? k.model + " — " : "") + "keywords: " + (k.kw || []).map((g) => g.join("/")).join(" + ");
   }
   const ansText = (q, a) => a === undefined ? "—" : q.type === "mc" ? q.options[a] : q.type === "multi" ? a.map((i) => q.options[i]).join("; ") : String(a);
 

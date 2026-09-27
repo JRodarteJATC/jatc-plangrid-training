@@ -133,3 +133,14 @@ test("quiz answered in app is auto-graded by the dashboard", async ({ page }) =>
   await expect(page.locator("td[title^='Quiz 2']")).toHaveText(/8\/8/);
   expect(page.errors).toEqual([]);
 });
+
+test("short-answer and number questions are saved under the right question", async ({ page }) => {
+  await page.goto("/#/quiz/att");
+  await page.fill("[name='1']", "Primer");
+  await page.fill("[name='2']", "Spec writer");
+  await page.fill("[name='4']", "8");
+  await page.click("#qSave");
+  const a = await page.evaluate(() => { const s = PT.store.get(); return s.quizzes[PT.store.pid()].att.answers; });
+  expect(a).toMatchObject({ 1: "Primer", 2: "Spec writer", 4: 8 });
+  expect(page.errors).toEqual([]);
+});

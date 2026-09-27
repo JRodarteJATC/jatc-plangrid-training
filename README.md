@@ -113,6 +113,7 @@ A deliberate conflict is built into the set for the RFI lab (Lab 5).
 | 6 | [Photos, daily reports & revisions](docs/modules/06-photos-reports-revisions.md) | [Lab 6](docs/labs/lab-06-field-day.md) | [Quiz 6](docs/quizzes/quiz-06.md) |
 | 7 | [Closeout & as-builts](docs/modules/07-closeout-and-as-builts.md) | [Lab 7](docs/labs/lab-07-as-builts.md) | [Final exam](docs/quizzes/final-exam.md) |
 | 8 | [Moving to the real app](docs/modules/08-moving-to-the-real-app.md) | – | – |
+| ★ | Real plan set: AT&T Upper Roof Replacement (plans from your instructor → Sheets → Upload) | – | [AT&T Reroof Blueprint Exercise](docs/quizzes/att-reroof-exercise.md) |
 
 Plus: [Glossary](docs/glossary.md) · [Skills checklist](docs/skills-checklist.md) ·
 [Instructor guide](instructor/instructor-guide.md) · Answer keys: private repo `jatc-plangrid-instructor-keys`

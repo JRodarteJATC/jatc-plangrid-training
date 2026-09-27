@@ -1250,6 +1250,116 @@ PT.quizzes = (() => {
           "unit": "feet"
         }
       ]
+    },
+    {
+      "id": "att",
+      "kind": "Blueprint exercise",
+      "title": "AT&T Reroof Blueprint Exercise (real plans)",
+      "module": 3,
+      "intro": "Use the AT&T Upper Roof Replacement plan set your instructor gives you (upload it under Sheets → Upload). All answers are contained within the prints.",
+      "questions": [
+        {
+          "id": "1",
+          "type": "text",
+          "q": "What is the first thing applied over the concrete deck?"
+        },
+        {
+          "id": "2",
+          "type": "text",
+          "q": "Who wrote the roofing specs?"
+        },
+        {
+          "id": "3",
+          "type": "text",
+          "q": "What is detail 3/A501?"
+        },
+        {
+          "id": "4",
+          "type": "num",
+          "q": "How many times does detail 3/A501 appear on the roof (sheet A101)?",
+          "unit": "times"
+        },
+        {
+          "id": "5",
+          "type": "text",
+          "q": "What is detail 1/A501 and where is it used?"
+        },
+        {
+          "id": "6",
+          "type": "text",
+          "q": "Does anything have to be demoed by others? What? Who? How many?"
+        },
+        {
+          "id": "7",
+          "type": "text",
+          "q": "What does the finish roof slope need to be?"
+        },
+        {
+          "id": "8",
+          "type": "text",
+          "q": "Do you see any issues or concerns about how the cricket plan is drawn?"
+        },
+        {
+          "id": "9",
+          "type": "text",
+          "q": "What unique safety concerns, if any, do you have?"
+        },
+        {
+          "id": "10",
+          "type": "text",
+          "q": "What goes under the RF Barrier Posts?"
+        },
+        {
+          "id": "11",
+          "type": "text",
+          "q": "What roof work is excluded?"
+        },
+        {
+          "id": "12",
+          "type": "text",
+          "q": "In what scale is detail 8/A501 drawn?"
+        },
+        {
+          "id": "13",
+          "type": "text",
+          "q": "On what page (sheet number) do you find the mechanical demo?"
+        },
+        {
+          "id": "14",
+          "type": "text",
+          "q": "What demoed mechanical equipment does not get replaced?"
+        },
+        {
+          "id": "15",
+          "type": "text",
+          "q": "What must be done to locate rebar in the roof deck before cutting or drilling?"
+        },
+        {
+          "id": "16",
+          "type": "text",
+          "q": "List the layers of the new roof in order starting with the concrete deck."
+        },
+        {
+          "id": "17",
+          "type": "text",
+          "q": "What type of warranty is required and by whom?"
+        },
+        {
+          "id": "18",
+          "type": "text",
+          "q": "What work must be performed first?"
+        },
+        {
+          "id": "19",
+          "type": "text",
+          "q": "What does (MOP) stand for?"
+        },
+        {
+          "id": "20",
+          "type": "text",
+          "q": "Google Earth the project (217 W. Acequia Ave, Visalia, CA) and list any concerns you see."
+        }
+      ]
     }
   ];
 
@@ -1257,6 +1367,7 @@ PT.quizzes = (() => {
      "the answer is B" can't be passed around. Answers are stored by the original option
      index, so grading is unaffected. True/False, Yes/No and Issue/Punch/RFI stay in order. */
   function order(setId, q) {
+    if (!q.options) return [];
     const n = q.options.length, idx = [...Array(n).keys()];
     if (n <= 2 || q.options.join("|") === IPR.join("|")) return idx;
     let h = 2166136261; for (const c of `${store.get().user?.name || ""}|${setId}|${q.id}`) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
@@ -1269,11 +1380,11 @@ PT.quizzes = (() => {
   const statusOf = (id) => { const r = bucket()[id]; return !r ? "Not started" : r.submittedAt ? "Submitted" : "Draft"; };
 
   function list(root) {
-    const groups = ["Quiz", "Lab worksheet", "Final exam"];
+    const groups = ["Quiz", "Lab worksheet", "Blueprint exercise", "Final exam"];
     root.innerHTML = `<div class="page-head"><h1>Quizzes & Worksheets</h1></div>
       <p class="muted">Answer here in the app. When you <b>Submit</b>, your answers are saved in your backup file – your instructor grades them automatically when you turn in
       <b>Settings → Export backup</b>. You can change answers and submit again until your instructor collects the file.</p>
-      ${groups.map((g) => `<section class="card"><h2>${g === "Quiz" ? "Quizzes" : g === "Lab worksheet" ? "Lab worksheets" : "Final exam (written part)"}</h2>
+      ${groups.map((g) => `<section class="card"><h2>${g === "Quiz" ? "Quizzes" : g === "Lab worksheet" ? "Lab worksheets" : g === "Blueprint exercise" ? "Blueprint exercises (real plan sets)" : "Final exam (written part)"}</h2>
         <table class="tbl click"><tbody>${SETS.filter((s) => s.kind === g).map((s) => { const st = statusOf(s.id); const r = bucket()[s.id];
           return `<tr data-q="${s.id}"><td><b>${esc(s.title)}</b></td><td>${s.questions.length} questions</td><td><span class="badge st-${st === "Submitted" ? "Closed" : st === "Draft" ? "InReview" : "Open"}">${st}</span></td><td class="muted small">${r?.submittedAt ? "Submitted " + fmtDateTime(r.submittedAt) : ""}</td></tr>`; }).join("")}</tbody></table></section>`).join("")}`;
     $$("tr[data-q]", root).forEach((tr) => (tr.onclick = () => (location.hash = "#/quiz/" + tr.dataset.q)));
@@ -1287,6 +1398,7 @@ PT.quizzes = (() => {
     if (saved.answers && saved.v !== 2) for (const q of set.questions) if (q.options) delete A[q.id];
     root.innerHTML = `<div class="page-head"><h1>${esc(set.title)}</h1><div class="actions"><a class="btn" href="#/quizzes">← All quizzes</a></div></div>
       ${old ? `<div class="card" style="border-color:var(--orange)">This quiz was updated after you submitted it. Your earlier submission is still saved and will be graded. If you want to change anything, answer the multiple-choice questions again and submit.</div>` : ""}
+      ${set.intro ? `<div class="card">${esc(set.intro)}</div>` : ""}
       ${saved.submittedAt ? `<div class="card" style="border-color:var(--green)">✔ Submitted ${fmtDateTime(saved.submittedAt)}${saved.attempts > 1 ? ` (attempt ${saved.attempts})` : ""}. You can still change answers and submit again.</div>` : ""}
       <form id="qf" class="card">
       ${set.questions.map((q, i) => {
@@ -1306,7 +1418,7 @@ PT.quizzes = (() => {
       for (const q of set.questions) {
         if (q.type === "multi") out[q.id] = $$(`input[name="${q.id}"]:checked`, f).map((x) => +x.value);
         else if (q.type === "mc") { const c = $(`input[name="${q.id}"]:checked`, f); if (c) out[q.id] = +c.value; }
-        else { const v = f.elements[q.id].value.trim(); if (v !== "") out[q.id] = q.type === "num" ? parseFloat(v) : v; }
+        else { const v = $(`[name="${q.id}"]`, f).value.trim(); /* not f.elements[id]: a numeric id is read as an index */ if (v !== "") out[q.id] = q.type === "num" ? parseFloat(v) : v; }
       }
       return out;
     };
