@@ -40,10 +40,15 @@ PT.store = (() => {
   }
 
   /* The course instructor is on every project's team so apprentices can assign / send to him. */
-  const INSTRUCTOR = { name: "Juan Rodarte", role: "Instructor", company: "Central Valley JATC", email: "", phone: "" };
+  const INSTRUCTOR = PT.roster.INSTRUCTOR;
   function ensureInstructor(s) {
     for (const p of s.projects || []) {
-      if (!(s.team || []).some((t) => t.projectId === p.id && t.name === INSTRUCTOR.name)) s.team.push({ ...INSTRUCTOR, id: uid("usr"), projectId: p.id });
+      const have = (s.team || []).filter((t) => t.projectId === p.id);
+      const ins = have.find((t) => t.name === INSTRUCTOR.name);
+      if (!ins) s.team.push({ ...INSTRUCTOR, id: uid("usr"), projectId: p.id });
+      else { if (!ins.email) ins.email = INSTRUCTOR.email; if (!ins.phone) ins.phone = INSTRUCTOR.phone; }
+      // the class roster, so apprentices can assign tasks to classmates
+      for (const a of PT.roster.APPRENTICES) if (!have.some((t) => t.name === a.name)) s.team.push({ ...a, id: uid("usr"), projectId: p.id });
     }
   }
 
@@ -98,7 +103,7 @@ PT.store = (() => {
 
   function freshState() {
     const s = seedProject();
-    return {
+    const st = {
       version: VERSION,
       user: { name: "Apprentice", role: "Apprentice", classYear: PT.util.DEFAULT_CLASS },
       activeProjectId: s.project.id,
@@ -108,6 +113,8 @@ PT.store = (() => {
       training: { completed: {} },
       settings: { defaultColor: "#e5322d" },
     };
+    ensureInstructor(st);
+    return st;
   }
 
   /* ---------- public API ---------- */

@@ -59,7 +59,7 @@ test("measure, area and count missions", async ({ page }) => {
 test("issue, RFI, daily report and compare", async ({ page }) => {
   await page.goto("/#/settings");
   await page.fill("#prof input[name=name]", "Test Apprentice");
-  await page.click("#prof button");
+  await page.click("#prof button.btn-primary");
 
   await page.goto(`/#/sheet/${await sheetId(page, "R-101")}`);
   await page.waitForTimeout(400);
@@ -96,7 +96,7 @@ test("issue, RFI, daily report and compare", async ({ page }) => {
 test("instructor dashboard loads a backup file", async ({ page }) => {
   await page.goto("/#/settings");
   await page.fill("#prof input[name=name]", "Dash Tester");
-  await page.click("#prof button");
+  await page.click("#prof button.btn-primary");
   await page.waitForTimeout(300);
   const json = await page.evaluate(() => PT.store.exportJSON());
   await page.goto("/instructor.html");
@@ -112,7 +112,7 @@ test("instructor dashboard loads a backup file", async ({ page }) => {
 test("quiz answered in app is auto-graded by the dashboard", async ({ page }) => {
   await page.goto("/#/settings");
   await page.fill("#prof input[name=name]", "Quiz Tester");
-  await page.click("#prof button");
+  await page.click("#prof button.btn-primary");
   await page.goto("/#/quiz/quiz2");
   for (let q = 1; q <= 7; q++) await page.check(`input[name='${q}'][value='0']`);
   await page.check("input[name='8'][value='0']");
@@ -150,7 +150,7 @@ const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR
 test("3A project: daily report logs, time sheet, task watchers and RFI sent date", async ({ page }) => {
   await page.goto("/#/settings");
   await page.fill("#prof input[name=name]", "Proj Tester");
-  await page.click("#prof button");
+  await page.click("#prof button.btn-primary");
 
   // Daily report with material + equipment logs, notes and a photo
   await page.goto("/#/reports");
@@ -325,7 +325,7 @@ test("text tool: edit existing text, and a lost pointer-up never blocks the othe
 test("RFI round trip: apprentice sends to instructor, instructor answers in dashboard, apprentice imports answer", async ({ page }) => {
   await page.goto("/#/settings");
   await page.fill("#prof input[name=name]", "Rfi Tester");
-  await page.click("#prof button");
+  await page.click("#prof button.btn-primary");
   await page.goto("/#/rfis");
   await page.click("#newBtn");
   await page.fill(".modal input[name=subject]", "Cricket at RTU-4 missing on R-102");
@@ -357,5 +357,32 @@ test("RFI round trip: apprentice sends to instructor, instructor answers in dash
   const r = await page.evaluate(() => PT.store.list("rfis").find((r) => r.assignedTo === "Juan Rodarte"));
   expect(r.answer).toContain("1/2");
   expect(r.answeredBy).toBe("Juan Rodarte");
+  expect(page.errors).toEqual([]);
+});
+
+test("long forms keep their buttons on screen (tablet) and the class roster is on the team", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 700 });
+  await page.goto("/#/issues");
+  await page.click("#newBtn");
+  for (const sel of [".modal button[type=submit]", ".modal footer button[data-close]"]) {
+    const b = await page.locator(sel).boundingBox();
+    expect(b.y + b.height).toBeLessThanOrEqual(700);
+  }
+  await page.keyboard.press("Escape");
+  await page.goto("/#/team");
+  await expect(page.locator(".person")).toHaveCount(5 + 1 + 11);
+  await expect(page.locator(".person", { hasText: "Juan Rodarte" })).toContainText("jrodarte@centralvalleyjatc.com");
+  await expect(page.locator(".person", { hasText: "Ivan Contreras" })).toContainText("Sequoia Commercial Roofing");
+  await expect(page.locator(".note-made-up")).toContainText("made up");
+  // profile: picking your name fills employer + practice e-mail
+  await page.goto("/#/settings");
+  await page.fill("#prof input[name=name]", "Tony Guzman");
+  await page.dispatchEvent("#prof input[name=name]", "change");
+  await expect(page.locator("#prof input[name=company]")).toHaveValue("San Joaquin Roof & Deck Co.");
+  await expect(page.locator("#prof input[name=email]")).toHaveValue("tony.guzman.roofer27@gmail.com");
+  await page.click("#rndCo");
+  await expect(page.locator("#prof input[name=company]")).not.toHaveValue("San Joaquin Roof & Deck Co.");
+  await page.click("#rndEm");
+  await expect(page.locator("#prof input[name=email]")).toHaveValue(/27@gmail\.com$|_27@gmail\.com$/);
   expect(page.errors).toEqual([]);
 });

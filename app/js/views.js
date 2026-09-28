@@ -251,7 +251,7 @@ PT.views = (() => {
           <label>Location / room <input name="location" value="${esc(i.location)}" placeholder="e.g. Roof Area B at RTU-3, north side"></label>
           <label>Sheet <select name="sheetId"><option value="">— none —</option>${sheetsSorted().map((s) => `<option value="${s.id}" ${s.id === i.sheetId ? "selected" : ""}>${esc(s.number)} – ${esc(s.title)}</option>`).join("")}</select></label>
           <label class="span2">Description <textarea name="description" rows="3">${esc(i.description)}</textarea></label>
-          <div class="span2"><b>Watching</b> <span class="muted small">(people who follow this item and get its updates)</span><div class="row gap" style="flex-wrap:wrap">${people().map((n) => `<label class="check"><input type="checkbox" name="watchers" value="${esc(n)}" ${(i.watchers || []).includes(n) ? "checked" : ""}> ${esc(n)}</label>`).join("")}</div></div>
+          <div class="span2"><b>Watching</b> <span class="muted small">(people who follow this item and get its updates)</span><div class="watch-grid">${people().map((n) => `<label class="check"><input type="checkbox" name="watchers" value="${esc(n)}" ${(i.watchers || []).includes(n) ? "checked" : ""}> ${esc(n)}</label>`).join("")}</div></div>
           <label>Delay (days) <input type="number" name="delayDays" min="0" step="0.5" value="${esc(i.delayDays ?? "")}" placeholder="0"></label>
           <label>Cost increase ($) <input type="number" name="costImpact" min="0" step="0.01" value="${esc(i.costImpact ?? "")}" placeholder="0.00"></label>
         </div>
@@ -648,8 +648,9 @@ PT.views = (() => {
   /* ============ TEAM ============ */
   function team(root) {
     const list = store.list("team");
-    root.innerHTML = header("Team", `<button class="btn btn-primary" id="addBtn">+ Invite member</button>`) +
-      `<div class="team-grid">${list.map((t) => `<div class="card person" data-id="${t.id}"><div class="avatar">${U.initials(t.name)}</div><div><b>${esc(t.name)}</b><div>${esc(t.role)}</div><div class="muted small">${esc(t.company)}</div><div class="small">${esc(t.email)} ${esc(t.phone)}</div></div></div>`).join("")}</div>`;
+    root.innerHTML = header("Team", `<button class="btn btn-primary" id="addBtn">+ Invite member</button>`) + `<p class="note-made-up">ⓘ ${esc(PT.roster.NOTE)}</p>` +
+      [["Project team", list.filter((t) => t.role !== "Apprentice")], [`Class roster – ${PT.roster.CLASS}`, list.filter((t) => t.role === "Apprentice")]].filter(([, l]) => l.length).map(([title, l]) =>
+        `<h2 class="team-h">${esc(title)} <span class="muted small">(${l.length})</span></h2><div class="team-grid">${l.map((t) => `<div class="card person" data-id="${t.id}"><div class="avatar">${U.initials(t.name)}</div><div><b>${esc(t.name)}</b><div>${esc(t.role)}</div><div class="muted small">${esc(t.company)}</div><div class="small">${t.email ? `<a href="mailto:${esc(t.email)}">${esc(t.email)}</a>` : ""} ${t.phone ? `<a href="tel:${esc(t.phone)}">${esc(t.phone)}</a>` : ""}</div></div></div>`).join("")}</div>`).join("");
     $$(".person", root).forEach((c) => (c.onclick = () => teamForm(store.find("team", c.dataset.id))));
     $("#addBtn", root).onclick = () => teamForm(null);
   }
@@ -660,10 +661,15 @@ PT.views = (() => {
       extraButtons: isNew ? "" : `<button type="button" class="btn btn-danger" id="delT">Remove</button>`,
       body: `<div class="form-grid"><label>Name <input name="name" required data-label="Name" value="${esc(t.name)}"></label>
         <label>Role <select name="role">${options(["Apprentice", "Journeyman", "Kettle / Hoist Operator", "Foreman", "General Foreman", "Superintendent", "Project Manager", "Project Engineer", "Architect", "Roof Consultant", "Manufacturer's Rep", "Inspector", "Instructor", "Owner Rep"], t.role)}</select></label>
-        <label>Company <input name="company" value="${esc(t.company)}"></label><label>Email <input type="email" name="email" value="${esc(t.email)}"></label>
+        <label>Company <span class="row gap"><input name="company" list="coList2" value="${esc(t.company)}" style="flex:1"><button type="button" class="btn btn-sm" id="tRndCo" title="Random practice company">🎲</button></span></label>
+        <datalist id="coList2">${PT.roster.COMPANIES.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
+        <label>Email <span class="row gap"><input type="email" name="email" value="${esc(t.email)}" style="flex:1"><button type="button" class="btn btn-sm" id="tRndEm" title="Make a practice e-mail">🎲</button></span></label>
         <label>Phone <input name="phone" value="${esc(t.phone)}"></label></div>`,
       onSubmit: (f) => { if (isNew) { store.add("team", f, `Added ${f.name} to the team`); store.event("team_add"); } else store.update("team", t.id, f); route(); },
     });
+    const tf = el.querySelector("form");
+    $("#tRndCo", el).onclick = () => (tf.elements.company.value = PT.roster.randomCompany(tf.elements.company.value));
+    $("#tRndEm", el).onclick = () => (tf.elements.email.value = PT.roster.randomEmail(tf.elements.name.value));
     $("#delT", el) && ($("#delT", el).onclick = () => U.confirmBox(`Remove ${t.name}?`, () => { store.remove("team", t.id, `Removed ${t.name}`); el.remove(); route(); }));
   }
 
@@ -700,12 +706,19 @@ PT.views = (() => {
       <div class="grid2">
         <section class="card"><h2>Your profile</h2>
           <form id="prof" class="form-grid">
-            <label>Your name <input name="name" value="${esc(s.user.name)}"></label>
+            <label>Your name <input name="name" list="rosterList" value="${esc(s.user.name)}" placeholder="Pick your name from the class list"></label>
+            <datalist id="rosterList">${PT.roster.APPRENTICES.map((a) => `<option value="${esc(a.name)}">`).join("")}</datalist>
+            <label>Company (employer) <span class="row gap"><input name="company" list="coList" value="${esc(s.user.company || "")}" style="flex:1"><button type="button" class="btn btn-sm" id="rndCo" title="Pick a random practice company">🎲</button></span></label>
+            <datalist id="coList">${PT.roster.COMPANIES.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
+            <label>E-mail <span class="row gap"><input name="email" type="email" value="${esc(s.user.email || "")}" style="flex:1"><button type="button" class="btn btn-sm" id="rndEm" title="Make a practice e-mail">🎲</button></span></label>
+            <label>Phone <input name="phone" value="${esc(s.user.phone || "")}" placeholder="559-555-0100"></label>
             <label>Class (curriculum week) <select name="classYear">${U.classOptions(s.user.classYear)}</select></label>
             <label>Role on project <select name="role">${options(["Apprentice", "Journeyman", "Foreman", "Instructor"], s.user.role)}</select></label>
             <div><button class="btn btn-primary">Save profile</button></div>
           </form>
-          <p class="muted small">Your name appears on markups, issues, and reports. Changing it also adds you to the project team so you can be assigned work.</p>
+          <p class="note-made-up">ⓘ ${esc(PT.roster.NOTE)}</p>
+          <p class="muted small">Your name appears on markups, issues, and reports. Picking your name fills in your employer and a practice e-mail – change them if you like (the app never sends e-mail). 🎲 picks a random practice company or e-mail.</p>
+          <p class="small">Instructor: <b>${esc(PT.roster.INSTRUCTOR.name)}</b> · <a href="mailto:${esc(PT.roster.INSTRUCTOR.email)}">${esc(PT.roster.INSTRUCTOR.email)}</a> · <a href="tel:${esc(PT.roster.INSTRUCTOR.phone)}">${esc(PT.roster.INSTRUCTOR.phone)}</a></p>
         </section>
         <section class="card"><h2>Projects</h2>
           <ul class="list">${s.projects.map((p) => `<li>${p.id === s.activeProjectId ? "✅" : ""} <a href="#" data-p="${p.id}">${esc(p.name)}</a> <span class="muted">${esc(p.number || "")}</span></li>`).join("")}</ul>
@@ -721,9 +734,15 @@ PT.views = (() => {
     $("#prof", root).onsubmit = (e) => {
       e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
       s.user = { ...s.user, ...f };
-      if (!store.list("team").some((t) => t.name === f.name)) store.add("team", { name: f.name, role: f.role, company: "Central Valley JATC", email: "", phone: "" });
+      const me = store.list("team").find((t) => t.name === f.name);
+      if (!me) store.add("team", { name: f.name, role: f.role, company: f.company || "Central Valley JATC", email: f.email || "", phone: f.phone || "" });
+      else Object.assign(me, { company: f.company || me.company, email: f.email || me.email, phone: f.phone || me.phone });
       store.log(`Profile updated: ${f.name}`); store.event("profile"); toast("Profile saved", "ok"); PT.app.renderChrome();
     };
+    const pf = $("#prof", root);
+    pf.elements.name.onchange = () => { const a = PT.roster.find(pf.elements.name.value); if (a) { pf.elements.company.value = a.company; if (!pf.elements.email.value || /(27|_27)@gmail\.com$/.test(pf.elements.email.value)) pf.elements.email.value = a.email; pf.elements.role.value = "Apprentice"; } };
+    $("#rndCo", root).onclick = () => (pf.elements.company.value = PT.roster.randomCompany(pf.elements.company.value));
+    $("#rndEm", root).onclick = () => (pf.elements.email.value = PT.roster.randomEmail(pf.elements.name.value));
     $$("[data-p]", root).forEach((a) => (a.onclick = (e) => { e.preventDefault(); s.activeProjectId = a.dataset.p; store.emit(); location.hash = "#/"; }));
     $("#newProj", root).onclick = () => modal({ title: "New project", body: `<label>Name <input name="name" required data-label="Name"></label><label>Project # <input name="number"></label><label>Address <input name="address"></label>`, onSubmit: (f) => { store.newProject(f.name, f.number, f.address); location.hash = "#/sheets"; PT.app.renderChrome(); } });
     $("#expBtn", root).onclick = () => { download(`plan-trainer-${s.user.name.replace(/\W+/g, "_")}-${today()}.json`, store.exportJSON(), "application/json"); store.event("export", { what: "backup" }); };
