@@ -6,26 +6,30 @@ PT.viewer = (() => {
   const store = PT.store;
 
   const TOOLS = [
-    { id: "select", icon: "☝", label: "Select / Pan", key: "v" },
-    { id: "pen", icon: "✎", label: "Pen", key: "p" },
-    { id: "highlighter", icon: "▰", label: "Highlighter", key: "h" },
-    { id: "line", icon: "╱", label: "Line", key: "l" },
-    { id: "arrow", icon: "➚", label: "Arrow", key: "a" },
-    { id: "rect", icon: "▭", label: "Rectangle", key: "r" },
-    { id: "ellipse", icon: "◯", label: "Ellipse", key: "e" },
-    { id: "cloud", icon: "☁", label: "Revision cloud", key: "c" },
-    { id: "text", icon: "T", label: "Text", key: "t" },
-    { id: "stamp", icon: "⬒", label: "Stamp", key: "s" },
+    { id: "select", icon: "☝", name: "Select", label: "Select / Pan", key: "v", hint: "Click a markup to select, move or edit it. Drag empty space to pan. Scroll or pinch to zoom." },
+    { id: "pen", icon: "✎", name: "Pen", label: "Pen", key: "p", hint: "Draw freehand – press and drag." },
+    { id: "highlighter", icon: "▰", name: "Highlight", label: "Highlighter", key: "h", hint: "Drag over text or an area to highlight it (see-through)." },
+    { id: "line", icon: "╱", name: "Line", label: "Line", key: "l", hint: "Drag from start to end." },
+    { id: "arrow", icon: "➚", name: "Arrow", label: "Arrow", key: "a", hint: "Drag from your note toward the item you are pointing at." },
+    { id: "rect", icon: "▭", name: "Box", label: "Rectangle", key: "r", hint: "Drag corner to corner to box in an area." },
+    { id: "ellipse", icon: "◯", name: "Circle", label: "Ellipse", key: "e", hint: "Drag corner to corner to circle an item." },
+    { id: "cloud", icon: "☁", name: "Cloud", label: "Revision cloud", key: "c", hint: "Drag around a change or a question – clouds mean “look here”." },
+    { id: "text", icon: "T", name: "Text", label: "Text", key: "t", hint: "Click where the note goes, then type it." },
+    { id: "stamp", icon: "⬒", name: "Stamp", label: "Stamp", key: "s", hint: "Pick a stamp (FIELD VERIFY, AS-BUILT, LEAK, SEE RFI…) above, then click the sheet." },
     { sep: true },
-    { id: "measure", icon: "📏", label: "Measure length", key: "m" },
-    { id: "polylen", icon: "〰", label: "Measure path (multi-segment run)", key: "u" },
-    { id: "area", icon: "⬠", label: "Measure area (click points, double-click to finish)", key: "g" },
-    { id: "count", icon: "#", label: "Count (click each item, Enter to finish)", key: "n" },
-    { id: "calibrate", icon: "⇔", label: "Calibrate scale", key: "k" },
+    { id: "measure", icon: "📏", name: "Measure", label: "Measure length", key: "m", hint: "Drag from point to point to measure a length. Calibrate the sheet first." },
+    { id: "polylen", icon: "〰", name: "Path", label: "Measure path (multi-segment run)", key: "u", hint: "Click each corner of a run (edge metal, flashing), double-click to finish – adds up all segments." },
+    { id: "area", icon: "⬠", name: "Area", label: "Measure area", key: "g", hint: "Click each corner of the roof area, double-click (or Enter) to finish – shows SF and squares." },
+    { id: "count", icon: "#", name: "Count", label: "Count", key: "n", hint: "Click each item (drains, pipes, curbs), press Enter to finish and name the count." },
+    { id: "calibrate", icon: "⇔", name: "Scale", label: "Calibrate scale", key: "k", hint: "Drag along a known dimension, then enter its real length. Do this before measuring." },
     { sep: true },
-    { id: "issue", icon: "📍", label: "Issue / Punch pin", key: "i" },
-    { id: "photo", icon: "📷", label: "Photo pin", key: "o" },
-    { id: "link", icon: "🔗", label: "Hyperlink to sheet", key: "y" },
+    { id: "issue", icon: "📍", name: "Issue", label: "Issue / Task / Punch pin", key: "i", hint: "Click the spot on the plan to pin an issue, task or punch item and fill in the details." },
+    { id: "photo", icon: "📷", name: "Photo", label: "Photo pin", key: "o", hint: "Click the spot where the photo was taken, then choose or take a picture." },
+    { id: "link", icon: "🔗", name: "Link", label: "Hyperlink to sheet", key: "y", hint: "Drag a box over a detail bubble, then pick the sheet it should open." },
+  ];
+  const EXTRA = [
+    ["undoBtn", "↶", "Undo", "Undo (Ctrl+Z)"], ["redoBtn", "↷", "Redo", "Redo (Ctrl+Y)"],
+    ["zoomIn", "＋", "Zoom in", "Zoom in (+)"], ["zoomOut", "－", "Zoom out", "Zoom out (−)"], ["zoomFit", "⤢", "Fit", "Fit whole sheet (0)"],
   ];
   const STAMPS = ["FIELD VERIFY", "AS-BUILT", "LEAK", "PROBED OK", "APPROVED", "REVISED", "VOID", "COMPLETE", "HOLD", "SEE RFI"];
   const COLORS = ["#e5322d", "#f28c28", "#e6c700", "#2e9e44", "#1f6fd1", "#7b3fc4", "#111111"];
@@ -72,13 +76,9 @@ PT.viewer = (() => {
         </div>
         <div class="viewer-body">
           <div class="toolbar" id="toolbar">
-            ${TOOLS.map((t) => t.sep ? `<hr>` : `<button class="tool" data-tool="${t.id}" title="${esc(t.label)} (${t.key.toUpperCase()})">${t.icon}</button>`).join("")}
+            ${TOOLS.map((t) => t.sep ? `<hr>` : `<button class="tool" data-tool="${t.id}" title="${esc(t.label)} (key ${t.key.toUpperCase()}) – ${esc(t.hint)}" aria-label="${esc(t.label)}"><span class="ti">${t.icon}</span><span class="tn">${esc(t.name)}</span></button>`).join("")}
             <hr>
-            <button class="tool" id="undoBtn" title="Undo (Ctrl+Z)">↶</button>
-            <button class="tool" id="redoBtn" title="Redo (Ctrl+Y)">↷</button>
-            <button class="tool" id="zoomIn" title="Zoom in (+)">＋</button>
-            <button class="tool" id="zoomOut" title="Zoom out (−)">－</button>
-            <button class="tool" id="zoomFit" title="Fit (0)">⤢</button>
+            ${EXTRA.map(([id, icon, name, tip]) => `<button class="tool" id="${id}" title="${esc(tip)}" aria-label="${esc(name)}"><span class="ti">${icon}</span><span class="tn">${esc(name)}</span></button>`).join("")}
           </div>
           <div class="canvas-wrap" id="canvasWrap" tabindex="0">
             <div class="stage" id="stage">
@@ -86,6 +86,7 @@ PT.viewer = (() => {
               <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
             </div>
             <div class="tool-options" id="toolOptions"></div>
+            <div class="tool-hint" id="toolHint"></div>
             <div class="compare-legend hidden" id="cmpLegend"></div>
             <div class="zoom-ind" id="zoomInd"></div>
           </div>
@@ -157,6 +158,8 @@ PT.viewer = (() => {
     $$("#toolbar .tool[data-tool]", V.root).forEach((b) => b.classList.toggle("active", b.dataset.tool === id));
     $("#canvasWrap", V.root).dataset.tool = id;
     renderToolOptions();
+    const t = TOOLS.find((x) => x.id === id), th = $("#toolHint", V.root);
+    if (th && t) th.innerHTML = `<b>${t.icon} ${esc(t.label)}</b> <kbd>${t.key.toUpperCase()}</kbd> – ${esc(t.hint)}`;
     if (["measure", "area", "polylen"].includes(id) && !V.ver.scalePxPerFt) toast("This sheet has no scale yet – use the Calibrate tool (⇔) first.", "warn");
   }
 

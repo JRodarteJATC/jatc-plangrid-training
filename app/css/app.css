@@ -139,9 +139,12 @@ mark { background: #ffe066; }
 .viewer-top .sheet-name { font-size: 1rem; white-space: nowrap; } .viewer-top .sheet-name span { color: var(--muted); }
 .viewer-top select { max-width: 260px; }
 .viewer-body { flex: 1; display: flex; min-height: 0; }
-.toolbar { width: 52px; background: #22313f; display: flex; flex-direction: column; align-items: center; padding: 6px 0; gap: 2px; overflow-y: auto; }
+.toolbar { width: 64px; background: #22313f; display: flex; flex-direction: column; align-items: center; padding: 6px 0; gap: 2px; overflow-y: auto; }
 .toolbar hr { width: 30px; border: 0; border-top: 1px solid #44566a; margin: 4px 0; }
-.tool { width: 40px; height: 36px; border: 0; border-radius: 7px; background: transparent; color: #e6edf5; font-size: 1.05rem; cursor: pointer; flex: none; }
+.tool { width: 58px; min-height: 42px; border: 0; border-radius: 7px; background: transparent; color: #e6edf5; font-size: 1.05rem; cursor: pointer; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3px 0; line-height: 1.1; }
+.tool .ti { font-size: 1.05rem; } .tool .tn { font-size: .62rem; margin-top: 2px; opacity: .9; white-space: nowrap; letter-spacing: .01em; }
+.tool-hint { position: absolute; left: 50%; transform: translateX(-50%); bottom: 10px; width: max-content; max-width: calc(100% - 160px); background: rgba(22, 50, 79, .92); color: #fff; font-size: .82rem; padding: 6px 10px; border-radius: 8px; pointer-events: none; }
+.tool-hint:empty { display: none; } .tool-hint kbd { background: #fff; color: #16324f; border-radius: 4px; padding: 0 5px; font-size: .75rem; }
 .tool:hover { background: #33475c; } .tool.active { background: var(--accent); color: #111; }
 .canvas-wrap { flex: 1; position: relative; overflow: hidden; background: #8c969f; touch-action: none; outline: none; cursor: grab; }
 .canvas-wrap[data-tool]:not([data-tool=select]) { cursor: crosshair; }
@@ -186,7 +189,8 @@ dl.info { display: grid; grid-template-columns: 80px 1fr; gap: 6px; margin: 0 0 
 }
 @media (max-width: 560px) {
   .brand b { display: none; }
-  .toolbar { width: 46px; } .tool { width: 38px; height: 32px; font-size: .95rem; }
+  .toolbar { width: 54px; } .tool { width: 50px; min-height: 38px; font-size: .95rem; } .tool .tn { font-size: .56rem; }
+  .tool-hint { font-size: .72rem; max-width: calc(100% - 20px); bottom: 44px; }
 }
 @media print { .topbar, .sidebar { display: none; } main { position: static; } }
 
