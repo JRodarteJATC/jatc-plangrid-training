@@ -115,7 +115,7 @@ PT.views = (() => {
         // try to read the sheet number from text (PlanGrid does this with OCR)
         let guess = "";
         try { const tc = await page.getTextContent(); const m = tc.items.map((i) => i.str).join(" ").match(/\b([A-Z]{1,2}-?\d{1,3}(?:\.\d{1,2})?)\b/g); if (m) guess = m[m.length - 1]; } catch { }
-        pages.push({ dataUrl: c.toDataURL("image/jpeg", 0.85), w: c.width, h: c.height, guess, name: `${file.name.replace(/\.pdf$/i, "")} p${n}` });
+        pages.push({ dataUrl: c.toDataURL("image/jpeg", 0.85), w: c.width, h: c.height, ppi: 72 * scale, guess, name: `${file.name.replace(/\.pdf$/i, "")} p${n}` });
       }
       return pages;
     }
@@ -143,7 +143,7 @@ PT.views = (() => {
             <p class="muted">Markups, issues and photos carry forward to the new version automatically.</p>`,
           submitLabel: "Publish version",
           onSubmit: (f) => {
-            existing.versions.push({ id: U.uid("ver"), rev: f.rev, set: f.set, date: f.date, src: { kind: "image", dataUrl: pg.dataUrl }, w: pg.w, h: pg.h, scalePxPerFt: null, links: [] });
+            existing.versions.push({ id: U.uid("ver"), rev: f.rev, set: f.set, date: f.date, src: { kind: "image", dataUrl: pg.dataUrl }, w: pg.w, h: pg.h, ppi: pg.ppi || null, scalePxPerFt: null, links: [] });
             existing.current = existing.versions.length - 1;
             store.log(`Published ${existing.number} Rev ${f.rev} (${f.set})`); store.event("upload_version", { sheetId: existing.id }); store.emit();
             location.hash = `#/sheet/${existing.id}`;
@@ -165,7 +165,7 @@ PT.views = (() => {
           const nums = arr(f.num), titles = arr(f.title), discs = arr(f.disc);
           pages.forEach((p, i) => {
             const num = nums[i].trim().toUpperCase();
-            const ver = { id: U.uid("ver"), rev: "0", set: f.set, date: today(), src: { kind: "image", dataUrl: p.dataUrl }, w: p.w, h: p.h, scalePxPerFt: null, links: [] };
+            const ver = { id: U.uid("ver"), rev: "0", set: f.set, date: today(), src: { kind: "image", dataUrl: p.dataUrl }, w: p.w, h: p.h, ppi: p.ppi || null, scalePxPerFt: null, links: [] };
             const ex = store.list("sheets").find((s) => s.number === num);
             if (ex) { ver.rev = String(ex.versions.length); ex.versions.push(ver); ex.current = ex.versions.length - 1; }
             else store.add("sheets", { number: num, title: titles[i], discipline: discs[i], tags: [], versions: [ver], current: 0 });

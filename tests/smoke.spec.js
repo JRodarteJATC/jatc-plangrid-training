@@ -243,3 +243,58 @@ test("3A project: daily report logs, time sheet, task watchers and RFI sent date
   await expect(page.locator("td[title^='3A PlanGrid']")).toHaveText(/100\/100/);
   expect(page.errors).toEqual([]);
 });
+
+test("scale: calibrate from a detail's graphic scale bar, pick a scale, drag grips, touch magnifier", async ({ page }) => {
+  // R-501 details are "AS NOTED": calibrate on detail 1's bar (0 to 1'-0" at 3" = 1'-0" = 150 units)
+  await page.goto(`/#/sheet/${await sheetId(page, "R-501")}`);
+  await page.waitForTimeout(400);
+  await page.click("[data-tool=calibrate]");
+  // detail 1 panel: x=50,y=50,w=720,h=520 -> bar starts at x+w-60-150 = 560, y+h-34 = 536
+  await dragSheet(page, [560, 540], [710, 540]);
+  await page.fill(".modal input[name=len]", "1'");
+  await page.click(".modal button[type=submit]");
+  await expect.poll(() => page.evaluate(() => PT.store.list("sheets").find((s) => s.number === "R-501").versions[0].scalePxPerFt)).toBeCloseTo(150, 0);
+  // the green calibration line has grips; drag one end 150 units further -> 1 ft now = 300 units
+  const cal = page.locator("[data-h='1'][data-cal] circle").last();
+  await expect(cal).toBeVisible();
+  const [ex, ey] = await toScreen(page, 710, 540), [fx, fy] = await toScreen(page, 860, 540);
+  await page.mouse.move(ex, ey); await page.mouse.down(); await page.mouse.move(fx, fy, { steps: 6 }); await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => PT.store.list("sheets").find((s) => s.number === "R-501").versions[0].scalePxPerFt)).toBeCloseTo(300, 0);
+
+  // Pick a scale from the list on R-102 (1/4" = 1'-0" -> 12.5 units/ft at 50 units per paper inch)
+  await page.goto(`/#/sheet/${await sheetId(page, "R-102")}`);
+  await page.waitForTimeout(400);
+  await page.click("[data-tool=calibrate]");
+  await page.click("#optScaleList");
+  await page.selectOption(".modal select[name=preset]", { label: `1/8" = 1'-0"` });
+  await page.click(".modal button[type=submit]");
+  await expect.poll(() => page.evaluate(() => PT.store.list("sheets").find((s) => s.number === "R-102").versions[0].scalePxPerFt)).toBeCloseTo(6.25, 2);
+  await page.click("#optScaleList");
+  await page.selectOption(".modal select[name=preset]", { label: `1/4" = 1'-0"` });
+  await page.click(".modal button[type=submit]");
+  await expect.poll(() => page.evaluate(() => PT.store.list("sheets").find((s) => s.number === "R-102").versions[0].scalePxPerFt)).toBeCloseTo(12.5, 2);
+
+  // Measure the 16' graphic scale bar on R-101 -> 16'-0", then drag the end grip to 8' -> 8'-0"
+  await page.goto(`/#/sheet/${await sheetId(page, "R-101")}`);
+  await page.waitForTimeout(400);
+  await page.click("[data-tool=measure]");
+  await dragSheet(page, [380, 1142], [580, 1142]); // drawingTitle(170,1120): bar at x+210 = 380, 16' * 12.5 = 200
+  const val = () => page.evaluate(() => PT.store.list("markups").filter((m) => m.type === "measure").pop().value);
+  await expect.poll(val).toBeCloseTo(16, 1);
+  const [gx, gy] = await toScreen(page, 580, 1142), [hx, hy] = await toScreen(page, 480, 1142);
+  await page.mouse.move(gx, gy); await page.mouse.down(); await page.mouse.move(hx, hy, { steps: 6 }); await page.mouse.up();
+  await expect.poll(val).toBeCloseTo(8, 1);
+
+  // Touch: the magnifier appears while the finger is down and hides when it lifts
+  const [tx, ty] = await toScreen(page, 300, 600);
+  await page.evaluate(([x, y]) => {
+    const w = document.querySelector("#canvasWrap");
+    const ev = (type, dx) => w.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: "touch", clientX: x + dx, clientY: y, bubbles: true, isPrimary: true, button: 0 }));
+    ev("pointerdown", 0); ev("pointermove", 40);
+    window.__loupe = !document.querySelector("#loupe").classList.contains("hidden");
+    ev("pointerup", 40);
+  }, [tx, ty]);
+  expect(await page.evaluate(() => window.__loupe)).toBe(true);
+  await expect(page.locator("#loupe")).toBeHidden();
+  expect(page.errors).toEqual([]);
+});

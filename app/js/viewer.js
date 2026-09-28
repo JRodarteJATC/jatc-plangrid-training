@@ -31,6 +31,12 @@ PT.viewer = (() => {
     ["undoBtn", "↶", "Undo", "Undo (Ctrl+Z)"], ["redoBtn", "↷", "Redo", "Redo (Ctrl+Y)"],
     ["zoomIn", "＋", "Zoom in", "Zoom in (+)"], ["zoomOut", "－", "Zoom out", "Zoom out (−)"], ["zoomFit", "⤢", "Fit", "Fit whole sheet (0)"],
   ];
+  // Drawing scales. Architectural: paper inches per foot. Engineering: feet per paper inch.
+  const ARCH = [["1/32", 1 / 32], ["1/16", 1 / 16], ["3/32", 3 / 32], ["1/8", 1 / 8], ["3/16", 3 / 16], ["1/4", 1 / 4], ["3/8", 3 / 8], ["1/2", 1 / 2], ["3/4", 3 / 4], ["1", 1], ["1-1/2", 1.5], ["3", 3]];
+  const ENG = [10, 20, 30, 40, 50, 60, 100];
+  const SCALE_PRESETS = [...ARCH.map(([l, v]) => [`${l}" = 1'-0"`, v]), ...ENG.map((f) => [`1" = ${f}'-0"`, 1 / f])];
+  const EDITABLE = ["line", "arrow", "measure", "polylen", "area", "count", "rect", "ellipse", "cloud", "link", "highlighter"];
+  const MEASURES = ["measure", "polylen", "area"];
   const STAMPS = ["FIELD VERIFY", "AS-BUILT", "LEAK", "PROBED OK", "APPROVED", "REVISED", "VOID", "COMPLETE", "HOLD", "SEE RFI"];
   const COLORS = ["#e5322d", "#f28c28", "#e6c700", "#2e9e44", "#1f6fd1", "#7b3fc4", "#111111"];
   const LAYERS = [["personal", "Personal"], ["published", "Published"], ["asbuilt", "As-Built"]];
@@ -87,6 +93,7 @@ PT.viewer = (() => {
             </div>
             <div class="tool-options" id="toolOptions"></div>
             <div class="tool-hint" id="toolHint"></div>
+            <canvas class="loupe hidden" id="loupe" width="300" height="300"></canvas>
             <div class="compare-legend hidden" id="cmpLegend"></div>
             <div class="zoom-ind" id="zoomInd"></div>
           </div>
@@ -166,7 +173,14 @@ PT.viewer = (() => {
   function renderToolOptions() {
     const box = $("#toolOptions", V.root);
     const drawing = !["select", "issue", "photo", "calibrate"].includes(V.tool);
-    if (!drawing) { box.innerHTML = V.tool === "calibrate" ? `<span>Drag along a known dimension, then enter its real length.</span>` : ""; box.classList.toggle("hidden", V.tool !== "calibrate"); return; }
+    if (!drawing) {
+      box.innerHTML = V.tool === "calibrate" ? `<span>Drag along the <b>graphic scale bar</b> or a known dimension, then enter its length. <b>Drag the green ends</b> to fine-tune.</span>
+        <span class="muted">Now: ${esc(scaleText(V.ver))}</span>
+        <button class="btn btn-sm btn-primary" id="optScaleList">Pick drawing scale…</button>` : "";
+      box.classList.toggle("hidden", V.tool !== "calibrate");
+      const b = $("#optScaleList", box); if (b) b.onclick = () => calibrate(null);
+      return;
+    }
     box.classList.remove("hidden");
     box.innerHTML = `
       <div class="swatches">${COLORS.map((c) => `<button class="swatch ${c === V.color ? "on" : ""}" data-c="${c}" style="background:${c}" title="${c}"></button>`).join("")}</div>
@@ -186,7 +200,7 @@ PT.viewer = (() => {
   /* ================= pointer handling ================= */
   function bindPointer() {
     const wrap = $("#canvasWrap", V.root);
-    let panStart = null, pinch = null;
+    let panStart = null, pinch = null, drag = null;
 
     wrap.addEventListener("wheel", (e) => {
       e.preventDefault();
@@ -197,8 +211,20 @@ PT.viewer = (() => {
     wrap.addEventListener("pointerdown", (e) => {
       if (e.target.closest(".tool-options")) return;
       wrap.focus();
-      wrap.setPointerCapture(e.pointerId);
+      try { wrap.setPointerCapture(e.pointerId); } catch { }
       V.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      V.touch = e.pointerType !== "mouse";
+      // Grab a handle (end point / corner) of the selected markup or the calibration line – works with any tool.
+      const hd = V.pointers.size === 1 && e.target.closest("[data-h]");
+      if (hd) {
+        const p0 = toSheet(e), i = +hd.dataset.h;
+        const m = hd.dataset.cal ? null : store.find("markups", V.selected);
+        const pts = m ? m.points : V.ver.calib.points;
+        V.dragCal = !m;
+        drag = { m, i, cal: !m, off: [pts[i][0] - p0.x, pts[i][1] - p0.y], orig: JSON.stringify(m || V.ver.calib) };
+        showLoupe(e, pts[i]);
+        return;
+      }
       if (V.pointers.size === 2) {
         const [a, b] = [...V.pointers.values()];
         pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; V.draft = V.draft && ["area", "count", "polylen"].includes(V.draft.type) ? V.draft : null; panStart = null; return;
@@ -222,12 +248,21 @@ PT.viewer = (() => {
         panStart = { x: e.clientX, y: e.clientY, tx: V.tx, ty: V.ty };
         return;
       }
+      if (V.touch && ["area", "polylen", "count"].includes(V.tool)) { V.touchPt = p; if (V.draft) V.draft.hover = p; showLoupe(e, [p.x, p.y]); renderOverlay(); return; }
       startDraw(p, e);
+      if (V.touch && V.draft) showLoupe(e, [p.x, p.y]);
     });
 
     wrap.addEventListener("pointermove", (e) => {
       if (!V.pointers.has(e.pointerId)) { if (V.draft && ["area", "polylen"].includes(V.draft.type)) { V.draft.hover = toSheet(e); renderOverlay(); } return; }
       V.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (drag && V.pointers.size === 1) {
+        const p = toSheet(e), q = [p.x + drag.off[0], p.y + drag.off[1]];
+        if (drag.m) { drag.m.points[drag.i] = q; if (MEASURES.includes(drag.m.type)) drag.m.value = measureValue(drag.m, verOf(drag.m).scalePxPerFt); }
+        else { V.ver.calib.points[drag.i] = q; applyCalib(V.ver); }
+        renderOverlay(); showLoupe(e, q); return;
+      }
+      if (V.touchPt && V.pointers.size === 1) { const p = toSheet(e); V.touchPt = p; if (V.draft) V.draft.hover = p; renderOverlay(); showLoupe(e, [p.x, p.y]); return; }
       if (pinch && V.pointers.size === 2) {
         const [a, b] = [...V.pointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y); const r = wrap.getBoundingClientRect();
@@ -239,12 +274,20 @@ PT.viewer = (() => {
         }
         V.tx = panStart.tx + e.clientX - panStart.x; V.ty = panStart.ty + e.clientY - panStart.y; applyTransform(); return;
       }
-      if (V.draft) { moveDraw(toSheet(e)); }
+      if (V.draft) { moveDraw(toSheet(e)); if (V.touch) showLoupe(e, V.draft.points[V.draft.points.length - 1]); }
     });
 
     const end = (e) => {
       V.pointers.delete(e.pointerId);
       if (V.pointers.size < 2) pinch = null;
+      hideLoupe();
+      if (drag) {
+        const d = drag; drag = null; V.dragCal = false;
+        if (d.m && JSON.stringify(d.m) !== d.orig) { pushUndo({ kind: "modify", id: d.m.id, before: JSON.parse(d.orig) }); store.log(`Adjusted ${d.m.type} on ${V.sheet.number}`); store.emit(); }
+        if (d.cal) { store.log(`Re-calibrated ${V.sheet.number}: ${ftIn(V.ver.calib.ft)}`); store.event("calibrate", { sheetId: V.sheet.id, ft: V.ver.calib.ft }); }
+        renderSide(); return;
+      }
+      if (V.touchPt) { const p = V.touchPt; V.touchPt = null; if (V.draft) V.draft.hover = null; if (e.type === "pointerup") startDraw(p, e); else renderOverlay(); return; }
       if (panStart) {
         if (panStart.moveMarkup && JSON.stringify(panStart.moveMarkup) !== panStart.orig) {
           pushUndo({ kind: "modify", id: panStart.moveMarkup.id, before: JSON.parse(panStart.orig) }); store.emit();
@@ -377,26 +420,107 @@ PT.viewer = (() => {
     renderOverlay();
   }
 
+  /* ---------- scale / calibration ---------- */
+  const ppiOf = (v) => v.ppi || (v.src?.kind === "sample" ? PT.samples.PPI : null); // sheet units per paper inch, if known
+  function scaleText(v) {
+    if (!v.scalePxPerFt) return "not set – calibrate first";
+    const ppi = ppiOf(v);
+    const hit = ppi && SCALE_PRESETS.find(([, ipf]) => Math.abs(ppi * ipf - v.scalePxPerFt) / v.scalePxPerFt < 0.01);
+    return (v.scaleLabel || (hit ? hit[0] : "")) + ` (1 ft = ${v.scalePxPerFt.toFixed(2)} units)` + (v.calib ? ` · set from a ${ftIn(v.calib.ft)} line` : "");
+  }
+  const verOf = (m) => V.sheet.versions.find((v) => v.id === m.versionId) || V.ver;
+  function recomputeValues() {
+    for (const m of store.list("markups").filter((m) => m.sheetId === V.sheet.id && MEASURES.includes(m.type))) m.value = measureValue(m, verOf(m).scalePxPerFt);
+  }
+  function applyCalib(v) {
+    const [a, b] = v.calib.points, px = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    if (px > 2) { v.scalePxPerFt = px / v.calib.ft; v.userCalibrated = true; v.scaleLabel = ""; recomputeValues(); }
+  }
+  function setScale(vers, pxPerFt, how, label = "") {
+    vers.forEach((v) => { v.scalePxPerFt = pxPerFt; v.userCalibrated = true; v.scaleLabel = label; if (how.calib) v.calib = JSON.parse(JSON.stringify(how.calib)); else delete v.calib; });
+    recomputeValues();
+    store.log(`Calibrated ${V.sheet.number}: ${how.text}`);
+    store.event("calibrate", { sheetId: V.sheet.id, ft: how.ft || 1 });
+    toast(`Scale set: ${label || how.text}`, "ok");
+    renderToolOptions(); renderOverlay(); renderSide();
+  }
+
+  // d = drawn line (from the Scale tool) or null (pick a scale from the list)
   function calibrate(d) {
-    const [a, b] = d.points; const px = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const px = d ? Math.hypot(d.points[0][0] - d.points[1][0], d.points[0][1] - d.points[1][1]) : 0;
+    const ppi = ppiOf(V.ver);
     renderOverlay();
     modal({
-      title: "Calibrate sheet scale",
-      body: `<p>You drew a line <b>${px.toFixed(0)}</b> units long. Enter the real-world length printed on the drawing (e.g. <code>100'-0"</code>, <code>34'</code>, <code>12.5</code>).</p>
-             <label>Known length <input name="len" required data-label="Known length" placeholder="100'-0&quot;"></label>
+      title: "Set the sheet scale",
+      body: `${d ? `<p>You drew a line <b>${px.toFixed(0)}</b> units long. Type the real length it represents – read it from the <b>graphic scale bar</b> or a printed dimension (e.g. <code>16'</code>, <code>100'-0"</code>, <code>6"</code>).</p>
+             <label>Known length <input name="len" placeholder="16'-0&quot;"></label>` : ""}
+             ${ppi ? `<label>${d ? "…or pick" : "Pick"} the drawing scale printed on the sheet <select name="preset"><option value="">—</option>${SCALE_PRESETS.map(([l], k) => `<option value="${k}">${esc(l)}</option>`).join("")}</select></label>
+             <p class="muted small">Picking from the list only works when the sheet is full size (not a half-size or reduced print). Always check it by measuring the graphic scale bar or a known dimension.</p>`
+             : `<p class="muted small">This sheet was uploaded as an image, so its paper size is unknown – calibrate by drawing along the graphic scale bar or a known dimension.</p>`}
              <label class="check"><input type="checkbox" name="all" value="1"> Apply to all versions of this sheet</label>`,
       submitLabel: "Set scale",
       onSubmit: (f) => {
-        const ft = parseFtIn(f.len);
-        if (!ft || ft <= 0) { toast("Could not read that length. Try 100'-0\"", "warn"); return false; }
-        const s = px / ft;
-        (f.all ? V.sheet.versions : [V.ver]).forEach((v) => { v.scalePxPerFt = s; v.userCalibrated = true; });
-        store.log(`Calibrated ${V.sheet.number}: ${ftIn(ft)} = ${px.toFixed(0)} units`);
-        store.event("calibrate", { sheetId: V.sheet.id, ft });
-        toast(`Scale set: 1 ft = ${s.toFixed(2)} units`, "ok");
-        renderOverlay(); renderSide();
+        const vers = f.all ? V.sheet.versions : [V.ver];
+        if (f.len && f.len.trim()) {
+          const ft = parseFtIn(f.len);
+          if (!ft || ft <= 0) { toast("Could not read that length. Try 16' or 100'-0\"", "warn"); return false; }
+          return setScale(vers, px / ft, { text: `${ftIn(ft)} = ${px.toFixed(0)} units`, ft, calib: { points: d.points.map((p) => [...p]), ft } });
+        }
+        if (f.preset !== undefined && f.preset !== "") {
+          const [label, ipf] = SCALE_PRESETS[+f.preset];
+          return setScale(vers, ppi * ipf, { text: label }, label);
+        }
+        toast(d ? "Type the known length or pick a scale" : "Pick a scale", "warn"); return false;
       },
     });
+  }
+
+  /* ---------- magnifier (loupe) so a finger doesn't hide the point ---------- */
+  function showLoupe(e, pt) {
+    if (!V.touch || !pt) return;
+    const cv = $("#loupe", V.root), img = $("#sheetImg", V.root); if (!cv || !img?.naturalWidth) return;
+    const wrap = $("#canvasWrap", V.root).getBoundingClientRect();
+    const D = 150, mag = Math.max(V.z * 2.5, 0.9), R = D / 2 / mag; // sheet units visible from centre
+    const kx = img.naturalWidth / V.ver.w, ky = img.naturalHeight / V.ver.h;
+    const ctx = cv.getContext("2d"), k = cv.width / D;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.setTransform(k * mag, 0, 0, k * mag, k * (D / 2 - pt[0] * mag), k * (D / 2 - pt[1] * mag)); // sheet units -> loupe px
+    try { ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, 0, 0, V.ver.w, V.ver.h); } catch { }
+    // what is being drawn / adjusted
+    const m = drawShape();
+    if (m?.points?.length) {
+      ctx.strokeStyle = m.color || "#1f6fd1"; ctx.lineWidth = 2 / mag; ctx.beginPath();
+      m.points.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+      if (m.hover) ctx.lineTo(m.hover.x, m.hover.y);
+      ctx.stroke();
+    }
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+    ctx.strokeStyle = "#e5322d"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(D / 2, D / 2 - 18); ctx.lineTo(D / 2, D / 2 - 4); ctx.moveTo(D / 2, D / 2 + 4); ctx.lineTo(D / 2, D / 2 + 18);
+    ctx.moveTo(D / 2 - 18, D / 2); ctx.lineTo(D / 2 - 4, D / 2); ctx.moveTo(D / 2 + 4, D / 2); ctx.lineTo(D / 2 + 18, D / 2); ctx.stroke();
+    const val = liveValue(m);
+    if (val) { ctx.font = "bold 13px Arial"; const w = ctx.measureText(val).width + 10; ctx.fillStyle = "rgba(22,50,79,.9)"; ctx.fillRect(D / 2 - w / 2, D - 26, w, 18); ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.fillText(val, D / 2, D - 12); }
+    let x = e.clientX - wrap.left, y = e.clientY - wrap.top - 140;
+    if (y < 10) y = e.clientY - wrap.top + 140;
+    x = Math.max(D / 2 + 6, Math.min(wrap.width - D / 2 - 6, x));
+    cv.style.left = x - D / 2 + "px"; cv.style.top = y - D / 2 + "px";
+    cv.classList.remove("hidden");
+  }
+  function hideLoupe() { const cv = V && $("#loupe", V.root); if (cv) cv.classList.add("hidden"); }
+  function drawShape() {
+    if (V.draft) return V.draft;
+    if (V.dragCal && V.ver.calib) return { type: "calibrate", points: V.ver.calib.points, color: "#2e9e44" };
+    if (V.selected) return store.find("markups", V.selected);
+    if (V.ver.calib) return { type: "calibrate", points: V.ver.calib.points, color: "#2e9e44" };
+    return null;
+  }
+  function liveValue(m) {
+    if (!m) return "";
+    if (m.type === "calibrate" && V.ver.calib && !V.draft) return `${ftIn(V.ver.calib.ft)} line · 1 ft = ${V.ver.scalePxPerFt.toFixed(1)}`;
+    if (!MEASURES.includes(m.type)) return "";
+    const pts = m.hover ? [...m.points, [m.hover.x, m.hover.y]] : m.points;
+    const v = measureValue({ ...m, points: pts }, V.ver.scalePxPerFt);
+    return v == null ? "" : m.type === "area" ? `${v.toFixed(1)} SF` : ftIn(v);
   }
 
   function commit(m) {
@@ -405,6 +529,7 @@ PT.viewer = (() => {
     store.log(`Added ${m.type} markup on ${V.sheet.number} (${m.layer})`);
     pushUndo({ kind: "add", id: m.id });
     V.draft = null;
+    if (MEASURES.includes(m.type) || (V.touch && ["line", "arrow"].includes(m.type))) V.selected = m.id; // show the grips so it can be adjusted
     renderOverlay(); renderSide();
     if (["pen", "highlighter", "line", "arrow", "rect", "ellipse", "cloud", "text", "stamp", "link"].includes(m.type) && m.layer === "personal") {
       if (!sessionStorageSafe("tipPersonal")) toast("Personal markups are only visible to you. Select it and click Publish to share with the team.");
@@ -539,6 +664,16 @@ PT.viewer = (() => {
     for (const m of markupsHere()) {
       s += `<g data-id="${m.id}" class="mk ${m.id === V.selected ? "sel" : ""}">${shapeSVG(m)}${m.id === V.selected ? selBox(m) : ""}</g>`;
     }
+    const sel = V.selected && store.find("markups", V.selected);
+    if (sel && sel.sheetId === V.sheet.id && EDITABLE.includes(sel.type) && sel.points) {
+      const pts = ["pen", "highlighter"].includes(sel.type) ? [] : sel.points;
+      s += handles(pts, "");
+    }
+    if (V.ver.calib && V.tool === "calibrate") {
+      const [a, b] = V.ver.calib.points;
+      s += `<g class="calib"><path d="M${a[0]} ${a[1]} L${b[0]} ${b[1]}" stroke="#2e9e44" stroke-width="${3 / Math.max(V.z, .3)}" stroke-dasharray="10 6" fill="none"/>` +
+        `<text x="${(a[0] + b[0]) / 2}" y="${(a[1] + b[1]) / 2 - 12 / V.z}" font-size="${14 / V.z}" font-weight="700" fill="#2e9e44" text-anchor="middle" font-family="Arial">SCALE ${esc(ftIn(V.ver.calib.ft))}</text></g>` + handles([a, b], ' data-cal="1"', "#2e9e44");
+    }
     if (V.show.issues) for (const i of store.list("issues").filter((i) => i.sheetId === V.sheet.id && i.x != null)) {
       const col = { Open: "#e5322d", "In Review": "#f28c28", Closed: "#2e9e44", Void: "#888" }[i.status] || "#e5322d";
       const shape = i.type === "Punch" ? `<rect x="-15" y="-15" width="30" height="30" rx="4" fill="${col}" stroke="#fff" stroke-width="3"/>` : `<circle r="16" fill="${col}" stroke="#fff" stroke-width="3"/>`;
@@ -549,6 +684,11 @@ PT.viewer = (() => {
     }
     if (V.draft) s += `<g class="draft">${shapeSVG(V.draft, true)}</g>`;
     svg.innerHTML = s;
+  }
+  // Big round grips: easy to grab with a finger; dragging one shows the magnifier.
+  function handles(pts, extra, col = "#1f6fd1") {
+    const r = 7 / V.z, R = 24 / V.z;
+    return pts.map((p, i) => `<g data-h="${i}"${extra} class="grip"><circle cx="${p[0]}" cy="${p[1]}" r="${R}" fill="transparent"/><circle cx="${p[0]}" cy="${p[1]}" r="${r}" fill="#fff" stroke="${col}" stroke-width="${2.5 / V.z}"/></g>`).join("");
   }
   function selBox(m) {
     const P = m.points || []; if (!P.length) return "";
@@ -577,6 +717,7 @@ PT.viewer = (() => {
       body += `<div class="card sel-card"><h3>Selected: ${esc(sel.type)}</h3>
         <p class="muted">By ${esc(sel.createdBy)} • ${PT.util.fmtDateTime(sel.createdAt)}</p>
         ${sel.value != null ? `<p><b>${sel.type === "area" ? sel.value.toFixed(1) + " SF" : ftIn(sel.value)}</b></p>` : ""}
+        ${EDITABLE.includes(sel.type) ? `<p class="muted small">Drag the round grips on the sheet to move an end point or corner.</p>` : ""}
         ${sel.type === "count" ? `<p><b>${sel.points.length}</b> ${esc(sel.label || "items")}</p>` : ""}
         <label>Layer <select id="selLayer">${options(LAYERS, sel.layer)}</select></label>
         <div class="swatches">${COLORS.map((c) => `<button class="swatch ${c === sel.color ? "on" : ""}" data-c="${c}" style="background:${c}"></button>`).join("")}</div>
@@ -606,7 +747,7 @@ PT.viewer = (() => {
         <dt>Sheet</dt><dd>${esc(V.sheet.number)} – ${esc(V.sheet.title)}</dd>
         <dt>Discipline</dt><dd>${esc(V.sheet.discipline || "")}</dd>
         <dt>Viewing</dt><dd>Rev ${esc(V.ver.rev)} (${esc(V.ver.set || "")}) ${V.verIdx !== V.sheet.current ? `<b class="warn-text">– NOT the current version</b>` : ""}</dd>
-        <dt>Scale</dt><dd>${V.ver.scalePxPerFt ? `1 ft = ${V.ver.scalePxPerFt.toFixed(2)} units ${V.ver.userCalibrated ? "(calibrated by user)" : "(from drawing)"}` : "<b class='warn-text'>Not set – use Calibrate</b>"}</dd>
+        <dt>Scale</dt><dd>${V.ver.scalePxPerFt ? `${esc(scaleText(V.ver))} ${V.ver.userCalibrated ? "(calibrated by user)" : "(from drawing)"}` : "<b class='warn-text'>Not set – use Calibrate</b>"}</dd>
         <dt>Tags</dt><dd>${(V.sheet.tags || []).map((t) => `<span class="badge">${esc(t)}</span>`).join(" ") || "—"}</dd>
       </dl>
       <div class="row gap"><button class="btn btn-sm" id="calBtn">⇔ Calibrate</button><button class="btn btn-sm" id="tagBtn">Edit tags</button><button class="btn btn-sm" id="newVerBtn">Upload new version</button></div>

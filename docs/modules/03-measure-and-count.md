@@ -16,6 +16,7 @@ the roof. On a screen there are no inches – the app needs to know how many *sc
 foot. That's **calibration**.
 
 - Roof plans: usually 1/8" or 1/4" = 1'-0". Details: 1-1/2" or 3" = 1'-0".
+- Use the **graphic scale bar** under each drawing title to check or set the scale.
 - Schedules and many details are **NTS (not to scale)** – don't measure them.
 - **Half-size prints (11×17) are half scale** – a 1/4" plan becomes 1/8".
 
@@ -24,6 +25,29 @@ foot. That's **calibration**.
 2. Press `K` (Calibrate). Drag from one end tick of that dimension to the other.
 3. Enter `100'-0"`.
 4. **Check it:** measure the **64'-0"** side. It should be within a few inches.
+
+**Three ways to set the scale** (Scale tool `K`):
+- **Known dimension** – drag along a printed dimension (above) and type its length.
+- **Graphic scale bar** – every drawing that has a scale also has a black-and-white **scale bar**
+  under its title (plans: 0–4'–8'–16'; details: 0–3"–6"–1'). Drag from 0 to the last number and type
+  it (e.g. `16'` or `1'`). The bar is always right, even on a half-size print.
+- **Pick the drawing scale** – *Pick drawing scale…* and choose what the title says (e.g. 1/4" = 1'-0").
+  Only works on full-size sheets – always check it by measuring the scale bar.
+
+**Detail sheets are "AS NOTED"** – each detail has its own scale (R-501 details are 3" = 1'-0"). Set
+the scale from *that detail's* scale bar before measuring it.
+
+**Fix it after:** a green dashed line shows where you calibrated (when the Scale tool is on). Drag its
+round ends to fine-tune; every measurement on the sheet updates.
+
+### On a tablet
+- A **magnifier** pops up above your finger while you draw or drag, with a red cross-hair and the
+  live length – use it to land exactly on the tick mark.
+- For **Path, Area and Count** the point is placed where you **lift** your finger, so you can slide
+  it into place first.
+- After you measure, the measurement stays selected with **round grips** at each end/corner. Drag a
+  grip to adjust it – you don't have to be exactly on it. Use the **Select** tool to pick an older
+  measurement and adjust it the same way.
 
 ## Measure
 | Tool | Key | How |

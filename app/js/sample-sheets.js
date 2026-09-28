@@ -62,8 +62,32 @@ PT.samples = (() => {
     return `${circ(x, y, 22, 2)}${line(x - 22, y, x + 22, y, 1.5)}${t(x, y - 5, num, 14, 'text-anchor="middle" font-weight="700"')}
       ${t(x, y + 16, "", 11, 'text-anchor="middle"')}
       ${t(x + 34, y + 2, name, 20, 'font-weight="700"')}${line(x + 34, y + 10, x + 34 + name.length * 12.5, y + 10, 2)}
-      ${t(x + 34, y + 28, "SCALE: " + scale, 13)}`;
+      ${t(x + 34, y + 28, "SCALE: " + scale, 13)}
+      ${unitsPerFt(scale) ? scaleBar(x + 210, y + 18, unitsPerFt(scale), BAR_PARTS[unitsPerFt(scale)]) : ""}`;
   }
+
+  /* Graphic scale (scale bar). Sheet = 50 units per paper inch, so a scale of N" = 1'-0" is 50·N units per foot.
+     The bar is drawn from the same number the sheet is printed at, so measuring the bar always matches the text. */
+  const PPI = 50;
+  function unitsPerFt(scale) {
+    const m = /^\s*(?:(\d+)-)?(\d+)(?:\/(\d+))?"\s*=\s*1'-0"/.exec(scale);
+    if (!m) return null;
+    const inch = (+m[1] || 0) + (m[3] ? +m[2] / +m[3] : +m[2]);
+    return PPI * inch;
+  }
+  const fmtLen = (ft) => ft >= 1 ? `${+ft.toFixed(2)}'` : `${Math.round(ft * 12)}"`;
+  function scaleBar(x, y, upf, parts) {
+    // parts: tick positions in feet, e.g. [0, 4, 8, 16]
+    const L = parts[parts.length - 1] * upf, hgt = 8;
+    let g = "";
+    for (let i = 0; i < parts.length - 1; i++) {
+      const a = x + parts[i] * upf, b = x + parts[i + 1] * upf;
+      g += `<rect x="${a}" y="${y}" width="${b - a}" height="${hgt}" fill="${i % 2 ? "#fff" : "#111"}" stroke="#111" stroke-width="1"/>`;
+    }
+    g += parts.map((f) => t(x + f * upf, y + hgt + 13, fmtLen(f).replace(/^0'$|^0"$/, "0"), 10, 'text-anchor="middle"')).join("");
+    return `<g class="graphic-scale">${g}${t(x + L + 8, y + hgt, "FEET", 9)}</g>`;
+  }
+  const BAR_PARTS = { 12.5: [0, 4, 8, 16], 25: [0, 2, 4, 8], 37.5: [0, 1, 2, 4], 50: [0, 1, 2, 3], 75: [0, 0.5, 1, 2], 150: [0, 0.25, 0.5, 1] };
 
   /* Detail / section callout bubble that links to another sheet. */
   function callout(x, y, detail, sheet) {
@@ -247,7 +271,8 @@ PT.samples = (() => {
   /* ---------- details ---------- */
   function panel(x, y, w, hgt, num, title, scale) {
     return `<rect x="${x}" y="${y}" width="${w}" height="${hgt}" fill="none" stroke="#999" stroke-width="1"/>` + circ(x + 30, y + hgt - 30, 18, 2) + line(x + 12, y + hgt - 30, x + 48, y + hgt - 30, 1.5) +
-      t(x + 30, y + hgt - 35, num, 13, 'text-anchor="middle" font-weight="700"') + t(x + 58, y + hgt - 28, title, 16, 'font-weight="700"') + t(x + 58, y + hgt - 10, "SCALE: " + scale, 11);
+      t(x + 30, y + hgt - 35, num, 13, 'text-anchor="middle" font-weight="700"') + t(x + 58, y + hgt - 28, title, 16, 'font-weight="700"') + t(x + 58, y + hgt - 10, "SCALE: " + scale, 11) +
+      (unitsPerFt(scale) ? scaleBar(x + w - 60 - BAR_PARTS[unitsPerFt(scale)].slice(-1)[0] * unitsPerFt(scale), y + hgt - 34, unitsPerFt(scale), BAR_PARTS[unitsPerFt(scale)]) : "");
   }
   const insul = (x, y, w, hgt) => `<rect x="${x}" y="${y}" width="${w}" height="${hgt}" fill="url(#insul)" stroke="#111" stroke-width="1"/>`;
   const membrane = (d) => `<path d="${d}" fill="none" stroke="#111" stroke-width="4"/>`;
@@ -256,13 +281,13 @@ PT.samples = (() => {
     let s = "";
     // 1 parapet
     {
-      const x = 50, y = 50; s += panel(x, y, 720, 520, "1", "PARAPET BASE FLASHING & COPING", '1-1/2" = 1\'-0"');
+      const x = 50, y = 50; s += panel(x, y, 720, 520, "1", "PARAPET BASE FLASHING & COPING", '3" = 1\'-0"');
       s += rect(x + 470, y + 90, 60, 320, 2, "url(#hatch)"); // wall
       s += rect(x + 60, y + 380, 410, 30, 2, "#ddd") + t(x + 70, y + 432, "", 10); // deck
       s += insul(x + 60, y + 310, 410, 70); // insulation
       s += rect(x + 60, y + 298, 410, 12, 1, "#bbb"); // cover board
-      s += membrane(`M${x + 60} ${y + 295} L${x + 468} ${y + 295} L${x + 468} ${y + 190}`);
-      s += rect(x + 460, y + 186, 10, 12, 1, "#111"); // term bar
+      s += membrane(`M${x + 60} ${y + 295} L${x + 468} ${y + 295} L${x + 468} ${y + 195}`);
+      s += rect(x + 460, y + 189, 10, 12, 1, "#111"); // term bar
       s += `<path d="M${x + 455} ${y + 80} L${x + 545} ${y + 80} L${x + 545} ${y + 130} M${x + 455} ${y + 80} L${x + 455} ${y + 170}" fill="none" stroke="#111" stroke-width="3"/>`;
       s += lbl(x + 500, y + 80, x + 580, y + 60, "METAL COPING W/ CONT. CLEAT");
       s += lbl(x + 457, y + 160, x + 20, y + 120, "COUNTERFLASHING / COPING FACE", 13, "start");
@@ -272,17 +297,18 @@ PT.samples = (() => {
       s += lbl(x + 300, y + 304, x + 580, y + 330, "1/2\" HD COVER BOARD");
       s += lbl(x + 300, y + 345, x + 580, y + 360, "TAPERED + FLAT POLYISO");
       s += lbl(x + 300, y + 395, x + 580, y + 395, "METAL DECK");
-      s += line(x + 480, y + 295, x + 480, y + 190, 1) + t(x + 485, y + 250, "8\"", 12, 'font-weight="700"');
+      s += line(x + 480, y + 295, x + 480, y + 195, 1) + t(x + 485, y + 250, "8\"", 12, 'font-weight="700"'); // 8" = 100 units at 3" = 1'-0"
     }
     // 2 roof drain
     {
-      const x = 800, y = 50; s += panel(x, y, 700, 520, "2", "ROOF DRAIN AT TAPERED SUMP", '1-1/2" = 1\'-0"');
+      const x = 800, y = 50; s += panel(x, y, 700, 520, "2", "ROOF DRAIN AT TAPERED SUMP", '3" = 1\'-0"');
       s += rect(x + 60, y + 380, 580, 30, 2, "#ddd");
-      s += `<path d="M${x + 60} ${y + 290} L${x + 250} ${y + 310} L${x + 450} ${y + 310} L${x + 640} ${y + 290} L${x + 640} ${y + 380} L${x + 60} ${y + 380} Z" fill="url(#insul)" stroke="#111"/>`;
-      s += membrane(`M${x + 60} ${y + 286} L${x + 250} ${y + 306} L${x + 450} ${y + 306} L${x + 640} ${y + 286}`);
-      s += `<path d="M${x + 290} ${y + 300} L${x + 300} ${y + 470} L${x + 400} ${y + 470} L${x + 410} ${y + 300} Z" fill="#fff" stroke="#111" stroke-width="2"/>`;
-      s += rect(x + 270, y + 296, 160, 12, 2, "#888");
-      s += `<path d="M${x + 300} ${y + 296} Q${x + 350} ${y + 200} ${x + 400} ${y + 296}" fill="none" stroke="#111" stroke-width="2"/>`;
+      // 1/2" sump = 6.25 units at 3" = 1'-0"
+      s += `<path d="M${x + 60} ${y + 290} L${x + 250} ${y + 296} L${x + 450} ${y + 296} L${x + 640} ${y + 290} L${x + 640} ${y + 380} L${x + 60} ${y + 380} Z" fill="url(#insul)" stroke="#111"/>`;
+      s += membrane(`M${x + 60} ${y + 286} L${x + 250} ${y + 292} L${x + 450} ${y + 292} L${x + 640} ${y + 286}`);
+      s += `<path d="M${x + 290} ${y + 294} L${x + 300} ${y + 470} L${x + 400} ${y + 470} L${x + 410} ${y + 294} Z" fill="#fff" stroke="#111" stroke-width="2"/>`;
+      s += rect(x + 270, y + 286, 160, 12, 2, "#888");
+      s += `<path d="M${x + 300} ${y + 286} Q${x + 350} ${y + 190} ${x + 400} ${y + 286}" fill="none" stroke="#111" stroke-width="2"/>`;
       s += lbl(x + 350, y + 240, x + 480, y + 170, "CAST IRON DOME STRAINER");
       s += lbl(x + 420, y + 302, x + 520, y + 240, "CLAMPING RING – TORQUE BOLTS");
       s += lbl(x + 150, y + 293, x + 20, y + 230, "MEMBRANE INTO CLAMPING RING", 13, "start");
@@ -305,7 +331,7 @@ PT.samples = (() => {
     }
     // 4 curb
     {
-      const x = 800, y = 590; s += panel(x, y, 700, 440, "4", "EQUIPMENT CURB FLASHING", '1-1/2" = 1\'-0"');
+      const x = 800, y = 590; s += panel(x, y, 700, 440, "4", "EQUIPMENT CURB FLASHING", '3" = 1\'-0"');
       s += rect(x + 60, y + 320, 580, 24, 2, "#ddd") + insul(x + 60, y + 260, 580, 60);
       s += rect(x + 330, y + 120, 40, 200, 2, "url(#hatch)");
       s += rect(x + 300, y + 70, 300, 50, 2, "#eee") + t(x + 450, y + 100, "RTU", 14, 'text-anchor="middle" font-weight="700"');
@@ -397,7 +423,7 @@ PT.samples = (() => {
   function sheetW501() {
     let s = "";
     { // 1 wall section
-      const x = 50, y = 50; s += panel(x, y, 720, 980, "1", "FOUNDATION WALL WATERPROOFING", '3/4" = 1\'-0"');
+      const x = 50, y = 50; s += panel(x, y, 720, 980, "1", "FOUNDATION WALL WATERPROOFING", '1" = 1\'-0"');
       s += rect(x + 330, y + 90, 90, 700, 2, "url(#hatch)"); // wall
       s += rect(x + 250, y + 790, 330, 80, 2, "url(#hatch)"); // footing
       s += rect(x + 420, y + 720, 200, 40, 1.5, "#ddd"); // slab
@@ -417,7 +443,7 @@ PT.samples = (() => {
       s += lbl(x + 280, y + 790, x + 20, y + 900, "MEMBRANE LAPPED ONTO FOOTING 6\"", 13, "start");
     }
     { // 2 elevator pit
-      const x = 800, y = 50; s += panel(x, y, 700, 500, "2", "ELEVATOR PIT – BLINDSIDE", '1/2" = 1\'-0"');
+      const x = 800, y = 50; s += panel(x, y, 700, 500, "2", "ELEVATOR PIT – BLINDSIDE", '3/4" = 1\'-0"');
       s += `<path d="M${x + 120} ${y + 120} L${x + 120} ${y + 380} L${x + 580} ${y + 380} L${x + 580} ${y + 120}" fill="none" stroke="#1a5fb4" stroke-width="5"/>`;
       s += rect(x + 130, y + 120, 40, 250, 1.5, "url(#hatch)") + rect(x + 530, y + 120, 40, 250, 1.5, "url(#hatch)") + rect(x + 130, y + 330, 440, 40, 1.5, "url(#hatch)");
       s += lbl(x + 120, y + 250, x + 20, y + 80, "HDPE BLINDSIDE MEMBRANE", 13, "start");
@@ -472,5 +498,5 @@ PT.samples = (() => {
     roofBox: { x1: X(0), y1: Y(0), x2: X(100), y2: Y(64) },
   };
 
-  return { W, H, PROJECT, sheets, dataUrl, answers, scale: S };
+  return { W, H, PPI, PROJECT, sheets, dataUrl, answers, scale: S, unitsPerFt };
 })();
