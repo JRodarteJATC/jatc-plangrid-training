@@ -214,13 +214,16 @@ PT.grading = (() => {
     const isInstr = (name, team) => /rodarte/i.test(name || "") || team.some((t) => t.name === name && t.role === "Instructor");
     const results = (S.projects || []).map((p) => {
       const of = (c) => (S[c] || []).filter((x) => x.projectId === p.id);
+      // team project: the whole team's work counts for every member (the dashboard shows who did what)
+      const members = p.team?.members?.includes(who) ? p.team.members : [who];
+      const mine = (n) => members.includes(n);
       const team = of("team");
-      const mkp = of("markups").filter((m) => m.createdBy === who);
+      const mkp = of("markups").filter((m) => mine(m.createdBy));
       const published = (sheetId) => mkp.some((m) => m.sheetId === sheetId && m.layer === "published") && !mkp.some((m) => m.sheetId === sheetId && m.layer === "personal");
       const txt = (v, n) => String(v || "").trim().length >= n;
 
       // Daily reports: best 5, different dates
-      const drAll = of("reports").filter((r) => r.type === "Daily Report" && r.createdBy === who && r.status === "Submitted");
+      const drAll = of("reports").filter((r) => r.type === "Daily Report" && mine(r.createdBy) && r.status === "Submitted");
       const drScore = (r) => [txt(r.workPerformed, 40), (r.materials || []).some((m) => m.material && m.qty), (r.equipmentLog || []).some((e) => e.name) || txt(r.equipment, 3), txt(r.notes, 25), (r.crew || []).some((c) => +c.count > 0)];
       const byDate = {};
       for (const r of drAll) { const sc = drScore(r).filter(Boolean).length; if (!byDate[r.date] || sc > byDate[r.date].sc) byDate[r.date] = { r, sc }; }
@@ -229,10 +232,10 @@ PT.grading = (() => {
       const drPhotos = dr.filter((r) => (r.photoIds || []).some((id) => (S.photos || []).some((ph) => ph.id === id))).length;
 
       // Documents
-      const docs = of("docs").filter((d) => !d.seed && (d.uploadedBy ? d.uploadedBy === who : true));
+      const docs = of("docs").filter((d) => !d.seed && (d.uploadedBy ? mine(d.uploadedBy) : true));
 
       // Time sheets for each daily-report day
-      const ts = of("reports").filter((r) => r.type === "Time Sheet" && r.createdBy === who && r.status === "Submitted" && (r.workers || []).some((w) => w.name && +w.hours > 0));
+      const ts = of("reports").filter((r) => r.type === "Time Sheet" && mine(r.createdBy) && r.status === "Submitted" && (r.workers || []).some((w) => w.name && +w.hours > 0));
       const tsDays = dr.filter((r) => ts.some((t) => t.date === r.date)).length;
       const tsComplete = dr.filter((r) => ts.some((t) => t.date === r.date && (t.workers || []).every((w) => w.name && w.classification && +w.hours > 0))).length;
 
@@ -245,12 +248,12 @@ PT.grading = (() => {
         i.sheetId && i.x != null && published(i.sheetId),
         String(i.delayDays ?? "") !== "" || String(i.costImpact ?? "") !== "",
       ];
-      const tasks = of("issues").filter((i) => i.createdBy === who && i.type === "Task").map((i) => ({ i, s: taskScore(i) })).sort((a, b) => b.s.filter(Boolean).length - a.s.filter(Boolean).length).slice(0, 3);
+      const tasks = of("issues").filter((i) => mine(i.createdBy) && i.type === "Task").map((i) => ({ i, s: taskScore(i) })).sort((a, b) => b.s.filter(Boolean).length - a.s.filter(Boolean).length).slice(0, 3);
       const tk = (k) => tasks.filter((t) => t.s[k]).length;
 
       // RFIs to the instructor
       const rfiScore = (r) => [isInstr(r.assignedTo, team) && r.status !== "Draft", !!r.sentDate || r.status !== "Draft", !!r.dueDate, txt(r.question, 60) && txt(r.subject, 8), (r.sheetIds || []).length > 0 && (r.sheetIds || []).every((id) => published(id))];
-      const rfis = of("rfis").filter((r) => r.createdBy === who).map((r) => ({ r, s: rfiScore(r) })).sort((a, b) => b.s.filter(Boolean).length - a.s.filter(Boolean).length).slice(0, 3);
+      const rfis = of("rfis").filter((r) => mine(r.createdBy)).map((r) => ({ r, s: rfiScore(r) })).sort((a, b) => b.s.filter(Boolean).length - a.s.filter(Boolean).length).slice(0, 3);
       const rk = (k) => rfis.filter((x) => x.s[k]).length;
 
       const items = [
@@ -277,7 +280,13 @@ PT.grading = (() => {
         ["RFIs are real, detailed questions (60+ chars)", frac(rk(3) / 3, 4), 4],
         ["RFIs reference sheets with published markups", frac(rk(4) / 3, 4), 4],
       ];
-      return { project: p.name, ...rub(items) };
+      const res = { project: p.name, team: members.length > 1 ? members : null, ...rub(items) };
+      if (res.team) {
+        const c = (n) => [`${of("reports").filter((r) => r.type === "Daily Report" && r.createdBy === n).length} daily`, `${of("reports").filter((r) => r.type === "Time Sheet" && r.createdBy === n).length} time sheets`,
+          `${of("docs").filter((d) => d.uploadedBy === n).length} docs`, `${of("issues").filter((i) => i.type === "Task" && i.createdBy === n).length} tasks`, `${of("rfis").filter((r) => r.createdBy === n).length} RFIs`, `${mkp.filter((m) => m.createdBy === n).length} markups`].join(", ");
+        res.items = [[`TEAM PROJECT – ${members.join(", ")} (team score for everyone)`, 0, 0], ...members.map((n) => [`   ${n}: ${c(n)}`, 0, 0]), ...res.items];
+      }
+      return res;
     });
     const best = results.sort((a, b) => b.earned - a.earned)[0] || rub([["No project", 0, 100]]);
     if (best.project && (S.projects || []).length > 1) best.items = [[`Graded project: ${best.project}`, 0, 0], ...best.items];

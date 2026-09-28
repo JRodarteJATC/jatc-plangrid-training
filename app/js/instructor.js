@@ -139,7 +139,16 @@
     regrade();
     if (added) toast(`Loaded ${added} apprentice file(s)`, "ok");
   }
+  // Team projects: combine every teammate's copy of the project, so the team is graded on all of its work
+  // even if someone forgot to sync before exporting their backup.
+  function combineTeams() {
+    const byTeam = {};
+    for (const s of students) for (const p of s.state.projects || []) if (p.team) (byTeam[p.id] ||= []).push(s.state);
+    for (const [pid, states] of Object.entries(byTeam)) if (states.length > 1)
+      for (const a of states) for (const b of states) if (a !== b) { try { PT.store.mergeTeam(a, PT.store.shareFor(pid, b), { noEmit: true }); } catch (e) { console.warn(e); } }
+  }
   function regrade() {
+    combineTeams();
     for (const s of students) s.r = analyze(s.state, s.file);
     students.sort((a, b) => a.r.name.localeCompare(b.r.name));
     render();

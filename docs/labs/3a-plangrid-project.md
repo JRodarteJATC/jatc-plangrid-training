@@ -11,6 +11,18 @@ of every project. If you have more than one project, the one with the best work 
 
 > Use the **same device and browser** every day and export a backup at the end of each class.
 
+## Working as a team (2–4 apprentices)
+Your instructor may let you do the project as a team – each person takes sections, and the work is combined.
+1. **One person** opens **Team Project → + Start a team project**, picks the teammates and **Sample drawings**
+   (or blank to upload real plans), then taps **⤓ Send my team file** and sends it (AirDrop, e-mail, shared drive).
+2. **Everyone else:** **Team Project → ⤒ Join / sync with team files** → choose that file.
+3. Use **Who does what** to split the sections (e.g. one person daily reports + time sheets, one tasks, one RFIs + documents).
+4. To combine work: everyone taps **⤓ Send my team file**, then **⤒ Sync** with the files from the others. Do it as often
+   as you like, in any order. Deleted items stay deleted; if two people made "RFI-001", one becomes RFI-002.
+   If your instructor turned on **⚡ Live sync**, changes show up on your teammates' devices by themselves.
+5. **Before you turn in your backup, sync one last time.** The whole team gets the team score; your instructor also
+   sees who did what.
+
 ---
 
 ## 1. Five days of Daily Reports – 45 pts

@@ -753,6 +753,7 @@ PT.views = (() => {
         try {
           const text = await f.text();
           if (/"plan-trainer-rfi-answers"/.test(text.slice(0, 200))) return importAnswersText(text); // instructor's RFI answers, not a backup
+          if (/"plan-trainer-team"/.test(text.slice(0, 200))) { PT.team.mergeTexts([text]); PT.app.renderChrome(); return PT.app.route(); } // a teammate's team file
           store.importJSON(text); toast("Backup imported", "ok"); location.hash = "#/"; PT.app.renderChrome();
         } catch (e) { toast(e.message, "warn"); }
       };

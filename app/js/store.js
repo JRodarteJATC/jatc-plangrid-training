@@ -136,7 +136,7 @@ PT.store = (() => {
   const list = (coll) => state[coll].filter((r) => r.projectId === pid());
   const find = (coll, id) => state[coll].find((r) => r.id === id);
 
-  function emit() { persist(); listeners.forEach((fn) => { try { fn(state); } catch (e) { console.error(e); } }); }
+  function emit() { if (!readOnly) trackChanges(); persist(); listeners.forEach((fn) => { try { fn(state); } catch (e) { console.error(e); } }); }
   const onChange = (fn) => (listeners.add(fn), () => listeners.delete(fn));
 
   function log(text) {
@@ -168,7 +168,11 @@ PT.store = (() => {
   }
   function remove(coll, id, logText) {
     const i = state[coll].findIndex((r) => r.id === id);
-    if (i >= 0) state[coll].splice(i, 1);
+    if (i >= 0) {
+      const [r] = state[coll].splice(i, 1);
+      // remember deletions so a teammate's copy doesn't bring the record back when you sync
+      (state.tombstones ||= {})[id] = { at: nowIso(), coll, projectId: r.projectId };
+    }
     if (logText) log(logText);
     emit();
   }
@@ -214,12 +218,123 @@ PT.store = (() => {
     return n;
   }
 
+  /* ================= TEAM PROJECTS (share & merge, live sync) =================
+     A team project is a normal project with project.team = { members: [...], sections: {...} }.
+     Every record carries createdAt/updatedAt; deletions leave a tombstone. Merging keeps the newest copy
+     of each record, so teammates can swap "team files" in any order, any number of times.            */
+  const TEAM_COLLS = ["sheets", "markups", "issues", "rfis", "submittals", "docs", "reports", "photos", "team"];
+  const stamp = (r) => r.updatedAt || r.createdAt || "";
+  const sig = (r) => JSON.stringify(r, (k, v) => (k === "updatedAt" || k === "updatedBy" ? undefined : k === "dataUrl" && typeof v === "string" ? v.length + v.slice(-40) : v));
+  let sigs = new Map(), sigsReady = false;
+  const changed = new Set(); // "coll/id" changed locally since the live-sync layer last looked
+  function teamProjectIds(st = state) { return new Set((st.projects || []).filter((p) => p.team).map((p) => p.id)); }
+  function trackChanges() {
+    if (!state) return;
+    const ids = teamProjectIds(); if (!ids.size) return;
+    const now = nowIso(), who = state.user?.name || "";
+    for (const c of TEAM_COLLS) for (const r of state[c] || []) {
+      if (!ids.has(r.projectId)) continue;
+      const k = c + "/" + r.id, h = sig(r), old = sigs.get(k);
+      if (old === h) continue;
+      sigs.set(k, h);
+      if (sigsReady && old !== undefined) { r.updatedAt = now; r.updatedBy = who; }
+      if (sigsReady) changed.add(k);
+    }
+    if (changed.size > 5000) changed.clear(); // nobody is live-syncing
+    for (const p of state.projects) if (ids.has(p.id)) { const k = "projects/" + p.id, h = sig(p); if (sigs.get(k) !== h) { if (sigsReady && sigs.has(k)) p.updatedAt = now; sigs.set(k, h); if (sigsReady) changed.add(k); } }
+    for (const [id, t] of Object.entries(state.tombstones || {})) if (ids.has(t.projectId) && !sigs.has("x/" + id)) { sigs.set("x/" + id, 1); if (sigsReady) changed.add("tombstones/" + id); }
+    sigsReady = true;
+  }
+  const takeChanges = () => { const out = [...changed]; changed.clear(); return out; };
+
+  function shareFor(projectId, st = state) {
+    const pick = (c) => (st[c] || []).filter((r) => r.projectId === projectId);
+    return {
+      type: "plan-trainer-team", version: 1, from: st.user?.name || "", exportedAt: nowIso(),
+      project: st.projects.find((p) => p.id === projectId),
+      records: Object.fromEntries(TEAM_COLLS.map((c) => [c, pick(c)])),
+      activity: pick("activity").slice(0, 300),
+      tombstones: Object.fromEntries(Object.entries(st.tombstones || {}).filter(([, t]) => t.projectId === projectId)),
+    };
+  }
+
+  // Merge a teammate's team file (or a live-sync batch) into a state. Pure w.r.t. the given state object.
+  function mergeTeam(st, share, { noEmit } = {}) {
+    if (!share || share.type !== "plan-trainer-team" || !share.project) throw new Error("Not a team project file");
+    const pid = share.project.id, stats = { added: 0, updated: 0, removed: 0 };
+    st.tombstones ||= {};
+    let p = st.projects.find((x) => x.id === pid);
+    if (!p) { st.projects.push(JSON.parse(JSON.stringify(share.project))); stats.added++; }
+    else if (stamp(share.project) > stamp(p)) Object.assign(p, JSON.parse(JSON.stringify(share.project)));
+    for (const [id, t] of Object.entries(share.tombstones || {})) {
+      const cur = st.tombstones[id];
+      if (!cur || cur.at < t.at) st.tombstones[id] = { ...t };
+      const arr = st[t.coll]; if (!arr) continue;
+      const i = arr.findIndex((r) => r.id === id);
+      if (i >= 0 && stamp(arr[i]) <= t.at) { arr.splice(i, 1); stats.removed++; }
+    }
+    for (const c of TEAM_COLLS) {
+      st[c] ||= [];
+      for (const inc of share.records?.[c] || []) {
+        const tomb = st.tombstones[inc.id];
+        if (tomb && tomb.at >= stamp(inc)) continue;
+        const loc = st[c].find((r) => r.id === inc.id);
+        if (!loc) {
+          if (c === "team" && st.team.some((t) => t.projectId === pid && t.name === inc.name)) continue; // same person added on two devices
+          st[c].push(JSON.parse(JSON.stringify(inc))); stats.added++;
+        } else if (c === "sheets") {
+          for (const v of inc.versions || []) if (!loc.versions.some((x) => x.id === v.id)) { loc.versions.push(JSON.parse(JSON.stringify(v))); stats.updated++; }
+          if (stamp(inc) > stamp(loc)) { const vs = loc.versions; Object.assign(loc, JSON.parse(JSON.stringify({ ...inc, versions: undefined })), { versions: vs }); loc.current = Math.min(loc.current ?? 0, vs.length - 1); stats.updated++; }
+        } else if (stamp(inc) > stamp(loc)) {
+          for (const k of Object.keys(loc)) delete loc[k];
+          Object.assign(loc, JSON.parse(JSON.stringify(inc))); stats.updated++;
+        }
+      }
+    }
+    // activity: union
+    st.activity ||= [];
+    const have = new Set(st.activity.map((a) => a.id));
+    for (const a of share.activity || []) if (!have.has(a.id)) st.activity.push(a);
+    st.activity.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    // two teammates may both have made "RFI-001": the later one gets the next free number (same result on every device)
+    for (const c of ["issues", "rfis"]) {
+      const list = st[c].filter((r) => r.projectId === pid).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || String(a.id).localeCompare(String(b.id)));
+      const used = new Set();
+      for (const r of list) {
+        if (used.has(+r.number)) { r.number = Math.max(...list.map((x) => +x.number || 0)) + 1; stats.updated++; }
+        used.add(+r.number);
+      }
+    }
+    if (st === state) { sigsReady = false; trackChanges(); if (!noEmit) emit(); }
+    return stats;
+  }
+
+  function newTeamProject({ name, members, withSamples }) {
+    let p;
+    if (withSamples) {
+      const s = seedProject();
+      p = s.project; p.name = name; p.number = "TEAM";
+      state.projects.push(p);
+      for (const c of ["team", "sheets", "submittals", "docs"]) state[c].push(...s[c]);
+    } else {
+      p = { id: uid("prj"), name, number: "TEAM", address: "", createdAt: nowIso() };
+      state.projects.push(p);
+    }
+    p.team = { members: [...new Set([state.user.name, ...members])], sections: {}, createdBy: state.user.name, createdAt: nowIso() };
+    p.updatedAt = nowIso();
+    state.activeProjectId = p.id;
+    ensureInstructor(state);
+    log(`Started team project ${name} (${p.team.members.join(", ")})`);
+    emit();
+    return p;
+  }
+
   /* Instructor dashboard: temporarily read another apprentice's backup without saving it. */
   function swap(s) { const prev = state; state = s; return prev; }
   // The Instructor Dashboard calls viewOnly() so nothing it does is ever written over this browser's saved project.
   function viewOnly(on = true) { readOnly = on; }
 
-  return { applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
+  return { TEAM_COLLS, shareFor, mergeTeam, newTeamProject, takeChanges, teamProjectIds, applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
 })();
 
 

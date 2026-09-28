@@ -112,6 +112,13 @@ sample project or create their own (**Settings → New project**, **Sheets → U
 and add you as a watcher. The dashboard grades the apprentice's best project (column **3A Proj**); labs are
 still graded on the sample project.
 
+**Team projects (2–4 apprentices):** apprentices use **Team Project** in the app – one starts it and sends a
+*team file*, the others join with it, then they swap team files to combine work (works offline, no accounts).
+Optional **live sync** makes changes appear on teammates' devices by themselves – one-time setup in
+[live-sync-setup.md](live-sync-setup.md). In the dashboard, load **all** teammates' backups: their copies are
+combined automatically, every member gets the **team score**, and the 3A detail shows **who did what** –
+adjust anyone who didn't contribute with an override.
+
 **Answering their RFIs (RFI inbox):**
 1. Drop the apprentices' backup files into the Instructor Dashboard.
 2. Click **📨 RFI inbox** (top right – it shows how many are waiting). Every RFI sent to Juan Rodarte is listed

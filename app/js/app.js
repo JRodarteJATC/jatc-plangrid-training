@@ -6,7 +6,7 @@ PT.app = (() => {
   const NAV = [
     ["", "🏠", "Home"], ["sheets", "🗺", "Sheets"], ["issues", "⚠", "Issues & Tasks"], ["punch", "✅", "Punch List"],
     ["rfis", "❓", "RFIs"], ["submittals", "📦", "Submittals"], ["photos", "📷", "Photos"], ["reports", "📝", "Daily Reports & Time Sheets"],
-    ["documents", "📁", "Documents & Specs"], ["team", "👷", "Team"], ["activity", "🕑", "Activity"],
+    ["documents", "📁", "Documents & Specs"], ["team", "👷", "Team"], ["teamproject", "👥", "Team Project"], ["activity", "🕑", "Activity"],
     ["training", "🎓", "Training Missions"], ["quizzes", "✏️", "Quizzes & Worksheets"], ["help", "❔", "Help"], ["settings", "⚙", "Settings"],
   ];
 
@@ -67,7 +67,7 @@ PT.app = (() => {
     const V = PT.views;
     const table = {
       "": V.dashboard, sheets: V.sheets, issues: V.issues, punch: V.punch, rfis: V.rfis, submittals: V.submittals, photos: V.photos,
-      reports: V.reports, documents: V.documents, quizzes: PT.quizzes.list, team: V.team, activity: V.activity, settings: V.settings, training: PT.training.view, help,
+      reports: V.reports, documents: V.documents, quizzes: PT.quizzes.list, team: V.team, activity: V.activity, settings: V.settings, training: PT.training.view, teamproject: PT.team.page, help,
     };
     if (r === "sheet") {
       const opts = {};
@@ -99,6 +99,7 @@ PT.app = (() => {
   async function start() {
     await store.init();
     renderChrome();
+    PT.team.live.resume();
     store.onChange(onStoreChange);
     window.addEventListener("hashchange", route);
     $("#searchForm").onsubmit = (e) => { e.preventDefault(); const q = $("#searchInput").value.trim(); if (q) { location.hash = "#/search/" + encodeURIComponent(q); store.event("search", { q: q.toLowerCase() }); } };

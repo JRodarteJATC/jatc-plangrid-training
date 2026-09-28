@@ -26,7 +26,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => new Promise((r) => { const q = indexedDB.deleteDatabase("plan-trainer"); q.onsuccess = q.onerror = q.onblocked = () => r(); }));
   await page.reload();
-  await expect(page.locator("#nav a")).toHaveCount(15);
+  await expect(page.locator("#nav a")).toHaveCount(16);
 });
 
 test("all sample sheets render", async ({ page }) => {
