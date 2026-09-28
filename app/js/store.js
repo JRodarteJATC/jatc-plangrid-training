@@ -48,7 +48,11 @@ PT.store = (() => {
       if (!ins) s.team.push({ ...INSTRUCTOR, id: uid("usr"), projectId: p.id });
       else { if (!ins.email) ins.email = INSTRUCTOR.email; if (!ins.phone) ins.phone = INSTRUCTOR.phone; }
       // the class roster, so apprentices can assign tasks to classmates
-      for (const a of PT.roster.APPRENTICES) if (!have.some((t) => t.name === a.name)) s.team.push({ ...a, id: uid("usr"), projectId: p.id });
+      for (const a of PT.roster.APPRENTICES) {
+        const t = have.find((t) => t.name === a.name);
+        if (!t) s.team.push({ ...a, id: uid("usr"), projectId: p.id });
+        else if (t.no == null) t.no = a.no; // roster number added later
+      }
     }
   }
 

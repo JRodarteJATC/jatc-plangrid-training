@@ -373,6 +373,8 @@ test("long forms keep their buttons on screen (tablet) and the class roster is o
   await expect(page.locator(".person")).toHaveCount(5 + 1 + 11);
   await expect(page.locator(".person", { hasText: "Juan Rodarte" })).toContainText("jrodarte@centralvalleyjatc.com");
   await expect(page.locator(".person", { hasText: "Ivan Contreras" })).toContainText("Sequoia Commercial Roofing");
+  await expect(page.locator(".person", { hasText: "Tony Guzman" }).locator(".roster-no")).toHaveText("#5");
+  expect(await page.locator(".roster-no").allTextContents()).toEqual(Array.from({ length: 11 }, (_, i) => `#${i + 1}`));
   await expect(page.locator(".note-made-up")).toContainText("made up");
   // profile: picking your name fills employer + practice e-mail
   await page.goto("/#/settings");

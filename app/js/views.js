@@ -649,8 +649,8 @@ PT.views = (() => {
   function team(root) {
     const list = store.list("team");
     root.innerHTML = header("Team", `<button class="btn btn-primary" id="addBtn">+ Invite member</button>`) + `<p class="note-made-up">ⓘ ${esc(PT.roster.NOTE)}</p>` +
-      [["Project team", list.filter((t) => t.role !== "Apprentice")], [`Class roster – ${PT.roster.CLASS}`, list.filter((t) => t.role === "Apprentice")]].filter(([, l]) => l.length).map(([title, l]) =>
-        `<h2 class="team-h">${esc(title)} <span class="muted small">(${l.length})</span></h2><div class="team-grid">${l.map((t) => `<div class="card person" data-id="${t.id}"><div class="avatar">${U.initials(t.name)}</div><div><b>${esc(t.name)}</b><div>${esc(t.role)}</div><div class="muted small">${esc(t.company)}</div><div class="small">${t.email ? `<a href="mailto:${esc(t.email)}">${esc(t.email)}</a>` : ""} ${t.phone ? `<a href="tel:${esc(t.phone)}">${esc(t.phone)}</a>` : ""}</div></div></div>`).join("")}</div>`).join("");
+      [["Project team", list.filter((t) => t.role !== "Apprentice")], [`Class roster – ${PT.roster.CLASS}`, list.filter((t) => t.role === "Apprentice").sort((a, b) => (a.no ?? 99) - (b.no ?? 99) || a.name.localeCompare(b.name))]].filter(([, l]) => l.length).map(([title, l]) =>
+        `<h2 class="team-h">${esc(title)} <span class="muted small">(${l.length})</span></h2><div class="team-grid">${l.map((t) => `<div class="card person" data-id="${t.id}"><div class="avatar">${U.initials(t.name)}</div><div><b>${t.no ? `<span class="roster-no">#${t.no}</span> ` : ""}${esc(t.name)}</b><div>${esc(t.role)}</div><div class="muted small">${esc(t.company)}</div><div class="small">${t.email ? `<a href="mailto:${esc(t.email)}">${esc(t.email)}</a>` : ""} ${t.phone ? `<a href="tel:${esc(t.phone)}">${esc(t.phone)}</a>` : ""}</div></div></div>`).join("")}</div>`).join("");
     $$(".person", root).forEach((c) => (c.onclick = () => teamForm(store.find("team", c.dataset.id))));
     $("#addBtn", root).onclick = () => teamForm(null);
   }
@@ -707,7 +707,7 @@ PT.views = (() => {
         <section class="card"><h2>Your profile</h2>
           <form id="prof" class="form-grid">
             <label>Your name <input name="name" list="rosterList" value="${esc(s.user.name)}" placeholder="Pick your name from the class list"></label>
-            <datalist id="rosterList">${PT.roster.APPRENTICES.map((a) => `<option value="${esc(a.name)}">`).join("")}</datalist>
+            <datalist id="rosterList">${PT.roster.APPRENTICES.map((a) => `<option value="${esc(a.name)}" label="#${a.no}">#${a.no} – ${esc(a.name)}</option>`).join("")}</datalist>
             <label>Company (employer) <span class="row gap"><input name="company" list="coList" value="${esc(s.user.company || "")}" style="flex:1"><button type="button" class="btn btn-sm" id="rndCo" title="Pick a random practice company">🎲</button></span></label>
             <datalist id="coList">${PT.roster.COMPANIES.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
             <label>E-mail <span class="row gap"><input name="email" type="email" value="${esc(s.user.email || "")}" style="flex:1"><button type="button" class="btn btn-sm" id="rndEm" title="Make a practice e-mail">🎲</button></span></label>

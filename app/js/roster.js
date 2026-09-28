@@ -15,20 +15,20 @@ PT.roster = (() => {
     "Harbor Point Waterproofing", "Delta Breeze Roofing, Inc.", "High Desert Roof & Sheet Metal", "Mission Trail Roofing Co.",
   ];
   const PRACTICE_COMPANIES = COMPANIES;
-  // Practice (made-up) class list – 11 apprentices, each with a made-up employer.
+  // Practice (made-up) class list – 11 apprentices, each with a random roster number 1–11 and a made-up employer.
   const APPRENTICES = [
-    ["Mateo Ramirez", "Sierra Summit Roofing, Inc."],
-    ["Luis Herrera", "Kings River Roofing & Sheet Metal"],
-    ["Adrian Castillo", "Tulare Basin Roofing Co."],
-    ["Daniel Ochoa", "Sierra Summit Roofing, Inc."],
-    ["Ricardo Mendoza", "Golden Valley Roof Systems"],
-    ["Samuel Vargas", "Kings River Roofing & Sheet Metal"],
-    ["Victor Delgado", "San Joaquin Roof & Deck Co."],
-    ["Andres Navarro", "Tulare Basin Roofing Co."],
-    ["Marco Salazar", "Golden Valley Roof Systems"],
-    ["Ivan Contreras", "Sequoia Commercial Roofing"],
-    ["Tony Guzman", "San Joaquin Roof & Deck Co."],
-  ].map(([name, company]) => ({ name, company, role: "Apprentice", email: practiceEmail(name), phone: "" }));
+    [11, "Mateo Ramirez", "Sierra Summit Roofing, Inc."],
+    [8, "Luis Herrera", "Kings River Roofing & Sheet Metal"],
+    [1, "Adrian Castillo", "Tulare Basin Roofing Co."],
+    [7, "Daniel Ochoa", "Sierra Summit Roofing, Inc."],
+    [2, "Ricardo Mendoza", "Golden Valley Roof Systems"],
+    [3, "Samuel Vargas", "Kings River Roofing & Sheet Metal"],
+    [9, "Victor Delgado", "San Joaquin Roof & Deck Co."],
+    [6, "Andres Navarro", "Tulare Basin Roofing Co."],
+    [4, "Marco Salazar", "Golden Valley Roof Systems"],
+    [10, "Ivan Contreras", "Sequoia Commercial Roofing"],
+    [5, "Tony Guzman", "San Joaquin Roof & Deck Co."],
+  ].map(([no, name, company]) => ({ no, name, company, role: "Apprentice", email: practiceEmail(name), phone: "" })).sort((a, b) => a.no - b.no);
   const EMPLOYERS = [...new Set(APPRENTICES.map((a) => a.company))];
 
   // Practice e-mail (made up, never used to send anything) – apprentices can change it. "27" = Local 27.

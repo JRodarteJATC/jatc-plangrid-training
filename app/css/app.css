@@ -215,3 +215,4 @@ dl.info { display: grid; grid-template-columns: 80px 1fr; gap: 6px; margin: 0 0 
 .rfi-card { margin: 10px 0; } .rfi-card p { margin: 6px 0; } .muted-card { opacity: .75; }
 
 .note-made-up { background: #fff7e0; border: 1px solid #f0d27a; color: #6b5200; padding: 6px 10px; border-radius: 8px; font-size: .85rem; margin: 6px 0 10px; }
+.roster-no { display: inline-block; min-width: 2.2em; background: var(--navy); color: #fff; border-radius: 6px; padding: 0 6px; font-size: .8rem; text-align: center; margin-right: 2px; }
