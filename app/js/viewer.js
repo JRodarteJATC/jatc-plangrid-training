@@ -211,6 +211,10 @@ PT.viewer = (() => {
     wrap.addEventListener("pointerdown", (e) => {
       if (e.target.closest(".tool-options")) return;
       wrap.focus();
+      // A new first finger / mouse press means no other pointer is really down. Forget any pointer whose
+      // "up" never arrived (e.g. a dialog opened, or the browser started dragging selected text) –
+      // otherwise the next press looks like a 2-finger pinch and no tool works.
+      if (e.isPrimary || e.pointerType === "mouse") { V.pointers.clear(); pinch = null; panStart = null; drag = null; }
       try { wrap.setPointerCapture(e.pointerId); } catch { }
       V.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       V.touch = e.pointerType !== "mouse";
@@ -298,7 +302,15 @@ PT.viewer = (() => {
     };
     wrap.addEventListener("pointerup", end);
     wrap.addEventListener("pointercancel", end);
-    wrap.addEventListener("dblclick", (e) => { if (V.draft && ["area", "polylen"].includes(V.draft.type)) { e.preventDefault(); finishDraft(); } });
+    wrap.addEventListener("lostpointercapture", (e) => { if (V.pointers.has(e.pointerId)) end(e); });
+    // No browser text-selection or drag-and-drop on the sheet (clicking SVG text used to start one).
+    wrap.addEventListener("dragstart", (e) => e.preventDefault());
+    wrap.addEventListener("selectstart", (e) => e.preventDefault());
+    wrap.addEventListener("dblclick", (e) => {
+      if (V.draft && ["area", "polylen"].includes(V.draft.type)) { e.preventDefault(); finishDraft(); return; }
+      const g = e.target.closest("[data-id]"), m = g && store.find("markups", g.dataset.id);
+      if (m && m.type === "text") editText(m);
+    });
 
   }
 
@@ -335,7 +347,10 @@ PT.viewer = (() => {
 
   function startDraw(p, e) {
     const t = V.tool, pt = [p.x, p.y];
-    if (t === "text") return promptText(p);
+    if (t === "text") {
+      const g = e?.target?.closest?.("[data-id]"), m = g && store.find("markups", g.dataset.id);
+      return m && m.type === "text" ? editText(m) : promptText(p);
+    }
     if (t === "stamp") return commit({ ...base("stamp"), points: [pt], text: V.stamp });
     if (t === "issue") return PT.views.issueForm(null, { sheetId: V.sheet.id, x: p.x, y: p.y });
     if (t === "photo") return PT.views.addPhoto({ sheetId: V.sheet.id, x: p.x, y: p.y });
@@ -397,6 +412,12 @@ PT.viewer = (() => {
     return out;
   }
 
+  function editText(m) {
+    modal({
+      title: "Edit text", body: `<label>Text <textarea name="text" rows="3" required data-label="Text">${esc(m.text)}</textarea></label>`, submitLabel: "Save",
+      onSubmit: (f) => { pushUndo({ kind: "modify", id: m.id, before: { ...m } }); m.text = f.text; store.emit(); select(m.id); },
+    });
+  }
   function promptText(p) {
     modal({
       title: "Add text", body: `<label>Text <textarea name="text" rows="3" required data-label="Text"></textarea></label>`, submitLabel: "Add",

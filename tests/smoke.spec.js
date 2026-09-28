@@ -298,3 +298,26 @@ test("scale: calibrate from a detail's graphic scale bar, pick a scale, drag gri
   await expect(page.locator("#loupe")).toBeHidden();
   expect(page.errors).toEqual([]);
 });
+
+test("text tool: edit existing text, and a lost pointer-up never blocks the other tools", async ({ page }) => {
+  await page.goto(`/#/sheet/${await sheetId(page, "R-101")}`);
+  await page.waitForTimeout(400);
+  await page.click("[data-tool=text]");
+  await clickSheet(page, 400, 400);
+  await page.fill(".modal textarea[name=text]", "FIELD NOTE");
+  await page.click(".modal button[type=submit]");
+  // clicking the text again with the Text tool edits it instead of adding another
+  await clickSheet(page, 420, 392);
+  await expect(page.locator(".modal h2")).toHaveText("Edit text");
+  await page.fill(".modal textarea[name=text]", "FIELD NOTE 2");
+  await page.click(".modal button[type=submit]");
+  const texts = await page.evaluate(() => PT.store.list("markups").filter((m) => m.type === "text").map((m) => m.text));
+  expect(texts).toEqual(["FIELD NOTE 2"]);
+  // simulate a press whose "up" never arrives (what used to freeze the tools)
+  await page.click("[data-tool=line]");
+  const [sx, sy] = await toScreen(page, 300, 700);
+  await page.evaluate(([x, y]) => document.querySelector("#canvasWrap").dispatchEvent(new PointerEvent("pointerdown", { pointerId: 42, pointerType: "touch", isPrimary: true, clientX: x, clientY: y, bubbles: true })), [sx, sy]);
+  await dragSheet(page, [500, 500], [700, 500]);
+  await expect.poll(() => page.evaluate(() => PT.store.list("markups").filter((m) => m.type === "line").length)).toBe(1);
+  expect(page.errors).toEqual([]);
+});
