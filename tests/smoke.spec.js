@@ -144,3 +144,102 @@ test("short-answer and number questions are saved under the right question", asy
   expect(a).toMatchObject({ 1: "Primer", 2: "Spec writer", 4: 8 });
   expect(page.errors).toEqual([]);
 });
+
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==", "base64");
+
+test("3A project: daily report logs, time sheet, task watchers and RFI sent date", async ({ page }) => {
+  await page.goto("/#/settings");
+  await page.fill("#prof input[name=name]", "Proj Tester");
+  await page.click("#prof button");
+
+  // Daily report with material + equipment logs, notes and a photo
+  await page.goto("/#/reports");
+  await page.click("[data-new='Daily Report']");
+  await page.fill(".modal input[name=c_trade]", "Apprentice");
+  await page.fill(".modal input[name=c_count]", "2");
+  await page.fill(".modal textarea[name=workPerformed]", "Installed base sheet and cap sheet Area A grid 1-4, 6 squares.");
+  await page.fill(".modal input[name=m_material]", "SBS cap sheet");
+  await page.fill(".modal input[name=m_qty]", "6");
+  await page.click(".modal [data-addrow=matTbl]");
+  await page.locator(".modal input[name=m_material]").nth(1).fill("Primer");
+  await page.fill(".modal input[name=e_name]", "Hoist");
+  await page.fill(".modal textarea[name=notes]", "GC moved the dumpster; lost 30 minutes of hoisting.");
+  const ch = page.waitForEvent("filechooser");
+  await page.click("#rpAddPh");
+  await (await ch).setFiles({ name: "a.png", mimeType: "image/png", buffer: PNG });
+  await page.fill(".modal input[name=caption]", "Cap sheet at RD-1");
+  await page.locator(".modal button[type=submit]").last().click();
+  await expect(page.locator("#rpStrip img")).toHaveCount(1);
+  await page.click("#submitRpt");
+
+  // Time sheet
+  await page.click("[data-new='Time Sheet']");
+  await page.fill(".modal input[name=w_name]", "Proj Tester");
+  await page.fill(".modal input[name=w_classification]", "Apprentice – 2nd period");
+  await page.fill(".modal input[name=w_start]", "06:00");
+  await page.fill(".modal input[name=w_end]", "14:30");
+  await page.fill(".modal input[name=w_lunch]", "30");
+  await expect(page.locator("#tsTotal")).toHaveText("8");
+  await page.click("#submitRpt");
+
+  const reps = await page.evaluate(() => PT.store.list("reports").filter((r) => r.createdBy === "Proj Tester"));
+  const dr = reps.find((r) => r.type === "Daily Report"), ts = reps.find((r) => r.type === "Time Sheet");
+  expect(dr.materials.map((m) => m.material)).toEqual(["SBS cap sheet", "Primer"]);
+  expect(dr.equipmentLog[0].name).toBe("Hoist");
+  expect(dr.photoIds.length).toBe(1);
+  expect(ts.workers[0].hours).toBe(8);
+
+  // Task with instructor watching, delay and cost
+  await page.goto("/#/issues");
+  await page.click("#newBtn");
+  await page.fill(".modal input[name=title]", "Relocate conduit at RTU-2 before flashing");
+  await page.selectOption(".modal select[name=type]", "Task");
+  await page.selectOption(".modal select[name=assignee]", "Maria Lopez");
+  await page.check(".modal input[name=watchers][value='Juan Rodarte']");
+  await page.fill(".modal input[name=delayDays]", "1");
+  await page.fill(".modal input[name=costImpact]", "450");
+  await page.click(".modal button[type=submit]");
+  await expect.poll(() => page.evaluate(() => PT.store.list("issues").some((i) => i.type === "Task"))).toBe(true);
+  const task = await page.evaluate(() => PT.store.list("issues").find((i) => i.type === "Task"));
+  expect(task).toMatchObject({ watchers: ["Juan Rodarte"], delayDays: "1", costImpact: "450" });
+
+  // RFI sent to the instructor gets a sent date
+  await page.goto("/#/rfis");
+  await page.click("#newBtn");
+  await page.fill(".modal input[name=subject]", "Drain sump depth at RD-1");
+  await page.fill(".modal textarea[name=question]", "Detail 3/R-501 shows a 1.5 inch sump but the tapered plan shows 1 inch. Which governs?");
+  await page.selectOption(".modal select[name=assignedTo]", "Juan Rodarte");
+  await page.fill(".modal input[name=dueDate]", "2026-12-01");
+  await page.click("#sendNow");
+  await expect.poll(() => page.evaluate(() => PT.store.list("rfis").some((r) => r.assignedTo === "Juan Rodarte"))).toBe(true);
+  const rfi = await page.evaluate(() => PT.store.list("rfis").find((r) => r.assignedTo === "Juan Rodarte"));
+  expect(rfi.sentDate).toBeTruthy();
+  expect(rfi.status).toBe("Open");
+
+  // Fill in the rest programmatically and check the dashboard rubric reaches 100
+  await page.evaluate(() => {
+    const S = PT.store, me = "Proj Tester", sh = S.list("sheets").find((s) => s.number === "R-101");
+    const ph = S.list("photos")[0].id;
+    for (let d = 2; d <= 5; d++) {
+      const date = `2026-10-0${d}`;
+      S.add("reports", { type: "Daily Report", date, status: "Submitted", createdBy: me, crew: [{ trade: "JW", count: "3" }], workPerformed: "Installed tapered insulation and cover board, Area B grid 5-8.", materials: [{ material: "Polyiso", qty: "20" }], equipmentLog: [{ name: "Hoist" }], notes: "Wind picked up after lunch; covered stock and tied down.", photoIds: d < 4 ? [ph] : [] });
+      S.add("reports", { type: "Time Sheet", date, status: "Submitted", createdBy: me, workers: [{ name: me, classification: "Apprentice", hours: 8 }] });
+    }
+    const first = S.list("reports").find((r) => r.type === "Daily Report" && r.createdBy === me && !r.date.startsWith("2026-10-0"));
+    const ts = S.list("reports").find((r) => r.type === "Time Sheet" && r.createdBy === me && r.date === first.date); ts.workers[0].classification = "Apprentice";
+    S.add("docs", { name: "Cap sheet data.pdf", folder: "Materials", kind: "pdf", uploadedBy: me });
+    S.add("docs", { name: "Primer SDS.pdf", folder: "Materials", kind: "pdf", uploadedBy: me });
+    S.add("markups", { sheetId: sh.id, type: "cloud", layer: "published", createdBy: me, points: [[0, 0], [10, 10]] });
+    for (const i of S.list("issues").filter((x) => x.createdBy === me)) Object.assign(i, { sheetId: sh.id, x: 300, y: 300, description: "Conduit sits where the new base flashing goes; electrician must relocate first.", photoIds: [ph] });
+    for (let k = 0; k < 2; k++) S.add("issues", { type: "Task", number: 90 + k, title: "Task " + k, assignee: "Maria Lopez", watchers: ["Juan Rodarte"], description: "Detailed description of the task with location and what to do.", photoIds: [ph], sheetId: sh.id, x: 200, y: 200, delayDays: "0", costImpact: "0", createdBy: me, status: "Open" });
+    for (const r of S.list("rfis").filter((x) => x.createdBy === me)) r.sheetIds = [sh.id];
+    for (let k = 0; k < 2; k++) S.add("rfis", { number: 50 + k, subject: "RFI subject " + k, question: "A real field question that references the plans and a detail, with dimensions.", assignedTo: "Juan Rodarte", status: "Open", sentDate: "2026-10-02", dueDate: "2026-10-09", sheetIds: [sh.id], createdBy: me });
+  });
+  const json = await page.evaluate(() => PT.store.exportJSON());
+  await page.goto("/instructor.html");
+  const chooser = page.waitForEvent("filechooser");
+  await page.click("#pickBtn");
+  await (await chooser).setFiles({ name: "p.json", mimeType: "application/json", buffer: Buffer.from(json) });
+  await expect(page.locator("td[title^='3A PlanGrid']")).toHaveText(/100\/100/);
+  expect(page.errors).toEqual([]);
+});

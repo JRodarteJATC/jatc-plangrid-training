@@ -4,8 +4,8 @@ PT.app = (() => {
   const store = PT.store;
 
   const NAV = [
-    ["", "🏠", "Home"], ["sheets", "🗺", "Sheets"], ["issues", "⚠", "Issues"], ["punch", "✅", "Punch List"],
-    ["rfis", "❓", "RFIs"], ["submittals", "📦", "Submittals"], ["photos", "📷", "Photos"], ["reports", "📝", "Reports & Forms"],
+    ["", "🏠", "Home"], ["sheets", "🗺", "Sheets"], ["issues", "⚠", "Issues & Tasks"], ["punch", "✅", "Punch List"],
+    ["rfis", "❓", "RFIs"], ["submittals", "📦", "Submittals"], ["photos", "📷", "Photos"], ["reports", "📝", "Daily Reports & Time Sheets"],
     ["documents", "📁", "Documents & Specs"], ["team", "👷", "Team"], ["activity", "🕑", "Activity"],
     ["training", "🎓", "Training Missions"], ["quizzes", "✏️", "Quizzes & Worksheets"], ["help", "❔", "Help"], ["settings", "⚙", "Settings"],
   ];

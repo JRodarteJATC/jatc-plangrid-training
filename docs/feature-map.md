@@ -19,7 +19,7 @@ ask your foreman which app and version your company uses.
 | RFIs | RFIs | RFIs | RFIs | RFIs | RFIs | – |
 | Submittals | Submittals | Submittals | Submittals | Submittals | Submittals | – |
 | Photos | Photos + 📷 pin | Photos | Photos | Photos | Photos | – |
-| Daily reports / forms | Reports & Forms | Field Reports / Forms | Forms | Daily Log / Forms | Forms | – |
+| Daily reports / time sheets / forms | Daily Reports & Time Sheets | Field Reports / Forms | Forms | Daily Log / Forms | Forms | – |
 | Specs & files | Documents & Specs | Documents / Specs | Files / Specifications | Documents / Specifications | Files / Specs | – |
 | Team | Team | Team | Members | Directory | People | – |
 | Offline use | (runs locally in browser) | Download sheets | Offline mode | Offline mode | Offline mode | Desktop |

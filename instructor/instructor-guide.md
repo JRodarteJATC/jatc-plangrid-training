@@ -85,6 +85,7 @@ they send it, so grading works by file:
 | Lab 5 | Conflict worksheet vs. key + RFI rubric (subject, references, suggestion, impacts, sent/assigned) + submittal + SEE RFI stamp |
 | Lab 6 | Rubric from toolbox talk, JHA, photos, inspection request, daily report + compare worksheet |
 | Lab 7 | Rubric from as-built markups, dimensions, RFI reference, AS-BUILT stamps, exports |
+| 3A PlanGrid Project | Rubric (100 pts) from their project: 5 daily reports with work/material/equipment logs, notes & photos · material documents uploaded · a time sheet for each day · 3 tasks (assigned, you watching, photo, delay/cost, published markups) · 3 RFIs to Juan Rodarte (sent & due dates, published markups) |
 | AT&T Reroof Blueprint Exercise | 20 short answers on the real AT&T plan set, scored by keywords 👁 (model answers shown in the detail view) |
 | Final | Written part vs. key + practical rubric from their project |
 | Training missions | All 32 re-checked from their actual work |
@@ -103,6 +104,16 @@ choices in their own shuffled order, so "the answer is B" can't be shared.
 
 **Keeping the key safe:** grade on your own computer. The dashboard remembers the key in that
 browser – click **Forget key** when you're done on any shared computer.
+
+## 3A PlanGrid Project
+Hand-out: [docs/labs/3a-plangrid-project.md](../docs/labs/3a-plangrid-project.md). Apprentices can use the
+sample project or create their own (**Settings → New project**, **Sheets → Upload** real plans).
+**Juan Rodarte (Instructor)** is on the team of every project automatically, so they can assign RFIs to you
+and add you as a watcher. The dashboard grades the apprentice's best project (column **3A Proj**); labs are
+still graded on the sample project.
+
+Their backup file includes their photos and uploaded documents, so it can be several MB – use email
+attachments or a shared drive.
 
 ## AT&T Reroof Blueprint Exercise (real plan set)
 A 20-question exercise on a real bid set – *AT&T Upper Roof Replacement, 217 W. Acequia Ave, Visalia*

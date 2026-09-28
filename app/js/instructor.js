@@ -20,6 +20,7 @@
   const ASSESS = [
     ...["quiz1", "quiz2", "quiz3", "quiz4", "quiz5", "quiz6"].map((id, i) => ({ id, label: `Q${i + 1}`, title: Q.find(id).title, group: "Quizzes" })),
     ...[1, 2, 3, 4, 5, 6, 7].map((n) => ({ id: `lab${n}`, label: `L${n}`, title: `Lab ${n}`, group: "Labs" })),
+    { id: "proj3a", label: "3A Proj", title: "3A PlanGrid Project", group: "Project" },
     { id: "att", label: "AT&T", title: "AT&T Reroof Blueprint Exercise", group: "Blueprint" },
     { id: "final", label: "Final", title: "Final exam (written + practical)", group: "Final" },
   ];
@@ -28,6 +29,10 @@
   function analyze(state, file) {
     const prev = PT.store.swap(state);
     try {
+      // Labs are graded on the sample training project, even if the apprentice left another project open
+      // (e.g. the 3A project with real plans – that one is found and graded separately).
+      const sample = (state.sheets || []).find((sh) => sh.number === "R-101" && (state.projects || []).some((p) => p.id === sh.projectId));
+      if (sample) state.activeProjectId = sample.projectId;
       const L = (c) => PT.store.list(c);
       const me = state.user?.name || "(no name)";
       const sid = (n) => L("sheets").find((s) => s.number === n)?.id;
@@ -47,7 +52,12 @@
         pensOk: missions.count_pipes,
       };
 
-      const resp = (state.quizzes || {})[state.activeProjectId] || {};
+      // Quiz answers are saved per project – use the latest submission from any project.
+      const resp = {};
+      for (const b of Object.values(state.quizzes || {})) for (const [id, r] of Object.entries(b || {})) {
+        const t = (x) => x?.submittedAt || x?.savedAt || "";
+        if (!resp[id] || (!!r.submittedAt > !!resp[id].submittedAt) || (!!r.submittedAt === !!resp[id].submittedAt && t(r) > t(resp[id]))) resp[id] = r;
+      }
       const ks = (id) => gkey?.sets?.[id];
       const qs = (id, title) => ({ title, kind: "questions", ...G.scoreSet(Q.find(id), resp[id], ks(id), gkey?.legacy?.[id]) });
       const rb = (title, x) => ({ title, kind: "rubric", ...x, submitted: true, hasKey: true });
@@ -64,6 +74,7 @@
         lab6: [rb("Lab 6 field day (auto rubric)", G.lab6()), scale(qs("lab6", "Lab 6 compare worksheet"), 4)],
         lab7: [rb("Lab 7 as-builts (auto rubric)", G.lab7())],
         att: [qs("att", "AT&T Reroof Blueprint Exercise")],
+        proj3a: [rb("3A PlanGrid Project (auto rubric)", G.project3a())],
         final: [qs("final", "Final – written"), rb("Final – practical (auto rubric)", G.finalPractical())],
       };
       r.grades = {};

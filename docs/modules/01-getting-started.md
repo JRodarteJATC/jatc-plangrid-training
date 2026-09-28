@@ -34,7 +34,7 @@ You'll use the app to:
 
 ## Tour of the Trainer
 The left menu is the same list of tools you'll find in PlanGrid / Autodesk Build:
-**Home, Sheets, Issues, Punch List, RFIs, Submittals, Photos, Reports & Forms, Documents & Specs,
+**Home, Sheets, Issues & Tasks, Punch List, RFIs, Submittals, Photos, Daily Reports & Time Sheets, Documents & Specs,
 Team, Activity**, plus **Training Missions** that check your work automatically.
 
 ### Step by step

@@ -4,7 +4,7 @@ PT.views = (() => {
   const U = PT.util, { esc, h, $, $$, toast, modal, options, fmtDate, fmtDateTime, today, download, toCSV } = U;
   const store = PT.store;
 
-  const ISSUE_TYPES = ["Issue", "Punch", "Safety", "Quality", "Leak", "Observation", "Warranty", "Design Coordination"];
+  const ISSUE_TYPES = ["Issue", "Task", "Punch", "Safety", "Quality", "Leak", "Observation", "Warranty", "Design Coordination"];
   const ISSUE_STATUS = ["Open", "In Review", "Closed", "Void"];
   const PRIORITY = ["Low", "Medium", "High", "Critical"];
   const RFI_STATUS = ["Draft", "Open", "Answered", "Closed"];
@@ -12,6 +12,8 @@ PT.views = (() => {
   const WEATHER = ["Sunny", "Partly Cloudy", "Overcast", "Rain", "Rain – no roofing", "Dew / frost on deck", "Fog", "High wind (>20 mph)", "Heat Advisory"];
 
   const people = () => store.list("team").map((t) => t.name);
+  const money = (v) => (v === "" || v == null || isNaN(+v) ? "" : "$" + (+v).toLocaleString(undefined, { maximumFractionDigits: 2 }));
+  const photoStrip = (ids) => (ids || []).map((id) => store.find("photos", id)).filter(Boolean).map((p) => `<img src="${p.dataUrl}" data-pv="${p.id}" title="${esc(p.caption || "")}">`).join("");
   const sheetsSorted = () => store.list("sheets").sort((a, b) => a.number.localeCompare(b.number));
   const overdue = (d, st) => d && d < today() && !["Closed", "Void", "Approved", "Answered"].includes(st);
   const statusBadge = (s) => `<span class="badge st-${String(s).replace(/[^A-Za-z]/g, "")}">${esc(s)}</span>`;
@@ -179,11 +181,11 @@ PT.views = (() => {
   /* ============ ISSUES & PUNCH ============ */
   let issueFilter = { q: "", status: "active", type: "", assignee: "" };
   function issues(root, punchOnly = false) {
-    const title = punchOnly ? "Punch List" : "Issues";
+    const title = punchOnly ? "Punch List" : "Issues & Tasks";
     root.innerHTML = header(title, `
       <button class="btn" id="csvBtn">⤓ Export CSV</button>
       <button class="btn" id="rptBtn">🖨 Print report</button>
-      <button class="btn btn-primary" id="newBtn">+ New ${punchOnly ? "punch item" : "issue"}</button>`) + `
+      <button class="btn btn-primary" id="newBtn">+ New ${punchOnly ? "punch item" : "issue / task"}</button>`) + `
       <div class="filters">
         <input type="search" id="fq" placeholder="Search…" value="${esc(issueFilter.q)}">
         <select id="fs"><option value="active">Open + In Review</option><option value="">All statuses</option>${options(ISSUE_STATUS)}</select>
@@ -219,7 +221,7 @@ PT.views = (() => {
     $("#fa", root).onchange = (e) => { issueFilter.assignee = e.target.value; draw(); };
     $("#newBtn", root).onclick = () => issueForm(null, { type: punchOnly ? "Punch" : "Issue" });
     $("#csvBtn", root).onclick = () => {
-      const data = rows().map((i) => ({ Number: i.number, Type: i.type, Title: i.title, Description: i.description, Status: i.status, Priority: i.priority, Assignee: i.assignee, Due: i.dueDate, Location: i.location, Sheet: store.find("sheets", i.sheetId)?.number || "", CreatedBy: i.createdBy, Created: i.createdAt, Closed: i.closedAt || "" }));
+      const data = rows().map((i) => ({ Number: i.number, Type: i.type, Title: i.title, Description: i.description, Status: i.status, Priority: i.priority, Assignee: i.assignee, Due: i.dueDate, Location: i.location, Sheet: store.find("sheets", i.sheetId)?.number || "", Watchers: (i.watchers || []).join("; "), DelayDays: i.delayDays ?? "", CostIncrease: i.costImpact ?? "", CreatedBy: i.createdBy, Created: i.createdAt, Closed: i.closedAt || "" }));
       if (!data.length) return toast("Nothing to export", "warn");
       download(`${punchOnly ? "punch-list" : "issues"}-${today()}.csv`, toCSV(data), "text/csv"); store.event("export", { what: "issues_csv" }); toast("CSV downloaded", "ok");
     };
@@ -233,7 +235,7 @@ PT.views = (() => {
 
   function issueForm(issue, preset = {}) {
     const isNew = !issue;
-    const i = issue || { type: preset.type || "Issue", status: "Open", priority: "Medium", assignee: "", dueDate: "", title: "", description: "", location: "", sheetId: preset.sheetId || "", x: preset.x, y: preset.y, photoIds: [], comments: [] };
+    const i = issue || { type: preset.type || "Issue", status: "Open", priority: "Medium", assignee: "", dueDate: "", title: "", description: "", location: "", sheetId: preset.sheetId || "", x: preset.x, y: preset.y, photoIds: [], comments: [], watchers: [], delayDays: "", costImpact: "" };
     const photos = (i.photoIds || []).map((id) => store.find("photos", id)).filter(Boolean);
     const { el } = modal({
       title: isNew ? `New ${i.type}` : `${i.type} #${i.number}`, wide: true, submitLabel: isNew ? "Create" : "Save",
@@ -249,6 +251,9 @@ PT.views = (() => {
           <label>Location / room <input name="location" value="${esc(i.location)}" placeholder="e.g. Roof Area B at RTU-3, north side"></label>
           <label>Sheet <select name="sheetId"><option value="">— none —</option>${sheetsSorted().map((s) => `<option value="${s.id}" ${s.id === i.sheetId ? "selected" : ""}>${esc(s.number)} – ${esc(s.title)}</option>`).join("")}</select></label>
           <label class="span2">Description <textarea name="description" rows="3">${esc(i.description)}</textarea></label>
+          <div class="span2"><b>Watching</b> <span class="muted small">(people who follow this item and get its updates)</span><div class="row gap" style="flex-wrap:wrap">${people().map((n) => `<label class="check"><input type="checkbox" name="watchers" value="${esc(n)}" ${(i.watchers || []).includes(n) ? "checked" : ""}> ${esc(n)}</label>`).join("")}</div></div>
+          <label>Delay (days) <input type="number" name="delayDays" min="0" step="0.5" value="${esc(i.delayDays ?? "")}" placeholder="0"></label>
+          <label>Cost increase ($) <input type="number" name="costImpact" min="0" step="0.01" value="${esc(i.costImpact ?? "")}" placeholder="0.00"></label>
         </div>
         <h3>Photos</h3>
         <div class="photo-strip" id="pstrip">${photos.map((p) => `<img src="${p.dataUrl}" data-pv="${p.id}" title="${esc(p.caption || "")}">`).join("")}<button type="button" class="btn" id="addPh">+ Add photo</button></div>
@@ -258,7 +263,7 @@ PT.views = (() => {
         <p class="muted small">Created by ${esc(i.createdBy)} • ${fmtDateTime(i.createdAt)}${i.closedAt ? ` • Closed ${fmtDateTime(i.closedAt)}` : ""}</p>`}`,
       onSubmit: (f) => {
         const pending = el._pendingPhotos || [];
-        const data = { title: f.title, type: f.type, status: f.status, priority: f.priority, assignee: f.assignee, dueDate: f.dueDate, location: f.location, description: f.description, sheetId: f.sheetId || null };
+        const data = { title: f.title, type: f.type, status: f.status, priority: f.priority, assignee: f.assignee, dueDate: f.dueDate, location: f.location, description: f.description, sheetId: f.sheetId || null, watchers: f.watchers ? [].concat(f.watchers) : [], delayDays: f.delayDays ?? "", costImpact: f.costImpact ?? "" };
         if (isNew) {
           const rec = store.add("issues", { ...data, number: store.nextNumber("issues"), x: i.x ?? null, y: i.y ?? null, photoIds: pending, comments: [], createdBy: store.get().user.name, closedAt: f.status === "Closed" ? new Date().toISOString() : null }, `Created ${f.type} #${store.nextNumber("issues")}: ${f.title}`);
           pending.forEach((pid) => { const p = store.find("photos", pid); if (p) { p.issueId = rec.id; p.sheetId = p.sheetId || rec.sheetId; } });
@@ -289,12 +294,12 @@ PT.views = (() => {
     root.innerHTML = header("RFIs – Requests for Information", `<button class="btn" id="csvBtn">⤓ Export CSV</button><button class="btn btn-primary" id="newBtn">+ New RFI</button>`) +
       `<p class="muted">Workflow: <b>Draft</b> → <b>Open</b> (sent, ball in court with the reviewer) → <b>Answered</b> → <b>Closed</b> (answer distributed to the field).</p><div id="tbl"></div>`;
     const list = store.list("rfis").sort((a, b) => b.number - a.number);
-    $("#tbl", root).innerHTML = list.length ? `<table class="tbl click"><thead><tr><th>RFI #</th><th>Subject</th><th>Status</th><th>Ball in court</th><th>Due</th><th>Cost?</th><th>Schedule?</th><th>Sheets</th></tr></thead><tbody>
-      ${list.map((r) => `<tr data-id="${r.id}"><td>RFI-${String(r.number).padStart(3, "0")}</td><td>${esc(r.subject)}</td><td>${statusBadge(r.status)}</td><td>${esc(r.status === "Answered" ? r.createdBy : r.assignedTo || "")}</td><td class="${overdue(r.dueDate, r.status) ? "warn-text" : ""}">${fmtDate(r.dueDate)}</td><td>${esc(r.costImpact)}</td><td>${esc(r.scheduleImpact)}</td><td>${(r.sheetIds || []).map((id) => store.find("sheets", id)?.number).filter(Boolean).join(", ")}</td></tr>`).join("")}
+    $("#tbl", root).innerHTML = list.length ? `<table class="tbl click"><thead><tr><th>RFI #</th><th>Subject</th><th>Status</th><th>Ball in court</th><th>Sent</th><th>Due</th><th>Cost?</th><th>Schedule?</th><th>Sheets</th></tr></thead><tbody>
+      ${list.map((r) => `<tr data-id="${r.id}"><td>RFI-${String(r.number).padStart(3, "0")}</td><td>${esc(r.subject)}</td><td>${statusBadge(r.status)}</td><td>${esc(r.status === "Answered" ? r.createdBy : r.assignedTo || "")}</td><td>${fmtDate(r.sentDate)}</td><td class="${overdue(r.dueDate, r.status) ? "warn-text" : ""}">${fmtDate(r.dueDate)}</td><td>${esc(r.costImpact)}</td><td>${esc(r.scheduleImpact)}</td><td>${(r.sheetIds || []).map((id) => store.find("sheets", id)?.number).filter(Boolean).join(", ")}</td></tr>`).join("")}
       </tbody></table>` : `<p class="muted">No RFIs yet.</p>`;
     $$("tr[data-id]", root).forEach((tr) => (tr.onclick = () => rfiForm(store.find("rfis", tr.dataset.id))));
     $("#newBtn", root).onclick = () => rfiForm(null);
-    $("#csvBtn", root).onclick = () => { download(`rfis-${today()}.csv`, toCSV(list.map((r) => ({ Number: r.number, Subject: r.subject, Status: r.status, AssignedTo: r.assignedTo, Due: r.dueDate, Question: r.question, Answer: r.answer || "" }))), "text/csv"); store.event("export", { what: "rfi_csv" }); };
+    $("#csvBtn", root).onclick = () => { download(`rfis-${today()}.csv`, toCSV(list.map((r) => ({ Number: r.number, Subject: r.subject, Status: r.status, AssignedTo: r.assignedTo, Sent: r.sentDate || "", Due: r.dueDate, Question: r.question, Answer: r.answer || "" }))), "text/csv"); store.event("export", { what: "rfi_csv" }); };
   }
 
   function rfiForm(rfi) {
@@ -314,6 +319,7 @@ PT.views = (() => {
           <label class="span2">Suggested solution <textarea name="suggestion" rows="2">${esc(r.suggestion)}</textarea></label>
           <label>Assigned to (reviewer) <select name="assignedTo"><option value="">—</option>${options(people(), r.assignedTo)}</select></label>
           <label>Response due <input type="date" name="dueDate" value="${esc(r.dueDate)}"></label>
+          ${!isNew && r.status !== "Draft" ? `<label>Sent date <input type="date" name="sentDate" value="${esc(r.sentDate || "")}"></label>` : `<p class="muted small span2">The <b>sent date</b> is filled in automatically when you send the RFI.</p>`}
           <label>Cost impact <select name="costImpact">${options(["Unknown", "Yes", "No"], r.costImpact)}</select></label>
           <label>Schedule impact <select name="scheduleImpact">${options(["Unknown", "Yes", "No"], r.scheduleImpact)}</select></label>
           <label class="span2">Referenced sheets <select name="sheetIds" multiple size="4">${sheetsSorted().map((s) => `<option value="${s.id}" ${(r.sheetIds || []).includes(s.id) ? "selected" : ""}>${esc(s.number)} – ${esc(s.title)}</option>`).join("")}</select></label>
@@ -333,6 +339,8 @@ PT.views = (() => {
     const data = { subject: f.subject, question: f.question, suggestion: f.suggestion, assignedTo: f.assignedTo, dueDate: f.dueDate, costImpact: f.costImpact, scheduleImpact: f.scheduleImpact, sheetIds: f.sheetIds ? [].concat(f.sheetIds) : [] };
     let status = f.status || r.status;
     if (action === "send") { if (!f.assignedTo) { toast("Assign a reviewer before sending", "warn"); return false; } status = "Open"; }
+    if (f.sentDate !== undefined) data.sentDate = f.sentDate;
+    if (status !== "Draft" && !(data.sentDate || r.sentDate)) data.sentDate = today();
     if (action === "close") status = "Closed";
     if (f.answer !== undefined) data.answer = f.answer;
     if (data.answer && status === "Open") status = "Answered";
@@ -438,12 +446,16 @@ PT.views = (() => {
   }
 
   /* ============ DAILY REPORTS / FORMS ============ */
-  const FORM_TYPES = ["Daily Report", "Toolbox Talk", "Pre-Task Plan (JHA)", "Inspection Request"];
+  const FORM_TYPES = ["Daily Report", "Time Sheet", "Toolbox Talk", "Pre-Task Plan (JHA)", "Inspection Request"];
+  const CLASSIFICATIONS = ["Foreman", "Journeyman", "Apprentice – 1st period", "Apprentice – 2nd period", "Apprentice – 3rd period", "Apprentice – 4th period", "Apprentice – 5th period", "Apprentice – 6th period", "Kettle / Hoist Operator", "Pre-apprentice / Helper"];
+  const hrsOf = (w) => { if (w.hours !== "" && w.hours != null && !isNaN(+w.hours)) return +w.hours; const t = (x) => { const m = /^(\d{1,2}):(\d{2})/.exec(x || ""); return m ? +m[1] + m[2] / 60 : null; }; const a = t(w.start), b = t(w.end); return a != null && b != null ? Math.max(0, Math.round((b - a - (+w.lunch || 0) / 60) * 100) / 100) : 0; };
+  const tsHours = (r) => (r.workers || []).reduce((s, w) => s + hrsOf(w), 0);
+  const reportSummary = (r) => r.type === "Time Sheet" ? `${(r.workers || []).length} worker(s) • ${tsHours(r)} hrs` : (r.workPerformed || r.topic || r.task || "").slice(0, 70);
   function reports(root) {
     const list = store.list("reports").sort((a, b) => b.date.localeCompare(a.date));
-    root.innerHTML = header("Field Reports & Forms", FORM_TYPES.map((t, k) => `<button class="btn ${k ? "" : "btn-primary"}" data-new="${t}">+ ${t}</button>`).join("")) +
+    root.innerHTML = header("Daily Reports, Time Sheets & Forms", FORM_TYPES.map((t, k) => `<button class="btn ${k ? "" : "btn-primary"}" data-new="${t}">+ ${t}</button>`).join("")) +
       `<table class="tbl click"><thead><tr><th>Date</th><th>Type</th><th>Summary</th><th>Crew</th><th>Status</th><th>By</th></tr></thead><tbody>
-      ${list.map((r) => `<tr data-id="${r.id}"><td>${fmtDate(r.date)}</td><td>${esc(r.type)}</td><td>${esc((r.workPerformed || r.topic || r.task || "").slice(0, 70))}</td><td>${(r.crew || []).reduce((s, c) => s + (+c.count || 0), 0)}</td><td>${statusBadge(r.status)}</td><td>${esc(r.createdBy)}</td></tr>`).join("") || "<tr><td colspan=6 class='muted'>No reports yet.</td></tr>"}
+      ${list.map((r) => `<tr data-id="${r.id}"><td>${fmtDate(r.date)}</td><td>${esc(r.type)}</td><td>${esc(reportSummary(r))}${(r.photoIds || []).length ? ` 📷${r.photoIds.length}` : ""}</td><td>${r.type === "Time Sheet" ? (r.workers || []).length : (r.crew || []).reduce((s, c) => s + (+c.count || 0), 0)}</td><td>${statusBadge(r.status)}</td><td>${esc(r.createdBy)}</td></tr>`).join("") || "<tr><td colspan=6 class='muted'>No reports yet.</td></tr>"}
       </tbody></table>`;
     $$("[data-new]", root).forEach((b) => (b.onclick = () => reportForm(null, b.dataset.new)));
     $$("tr[data-id]", root).forEach((tr) => (tr.onclick = () => reportForm(store.find("reports", tr.dataset.id))));
@@ -452,6 +464,20 @@ PT.views = (() => {
   function crewRows(crew) {
     return (crew.length ? crew : [{ trade: "", company: "", count: "", hours: "" }]).map((c) => `<tr><td><input name="c_trade" value="${esc(c.trade)}" placeholder="Roofer JW / Apprentice"></td><td><input name="c_company" value="${esc(c.company)}"></td><td><input name="c_count" type="number" min="0" value="${esc(c.count)}" style="width:5em"></td><td><input name="c_hours" type="number" min="0" step="0.5" value="${esc(c.hours)}" style="width:5em"></td></tr>`).join("");
   }
+
+  function logRows(prefix, cols, rows) {
+    return (rows.length ? rows : [{}]).map((row) => `<tr>${cols.map(([k, ph, w, t]) => `<td><input name="${prefix}_${k}" ${t ? `type="${t}"` : ""} value="${esc(row[k] ?? "")}" placeholder="${esc(ph)}" ${w ? `style="width:${w}"` : ""}></td>`).join("")}</tr>`).join("");
+  }
+  const MAT_COLS = [["material", "e.g. 60-mil TPO white, 10'×100' rolls"], ["qty", "12", "5em"], ["unit", "rolls", "6em"], ["supplier", "Supplier / delivery ticket #"], ["use", "Where used / notes"]];
+  const EQ_COLS = [["name", "e.g. Hot-air robotic welder"], ["qty", "1", "4em"], ["hours", "8", "5em"], ["notes", "Owned / rented, condition, fuel…"]];
+  const TS_COLS = [["name", "Worker name"], ["classification", "Journeyman / Apprentice – 2nd period"], ["start", "", "7em", "time"], ["end", "", "7em", "time"], ["lunch", "30", "4.5em"], ["hours", "auto", "5em"], ["costCode", "Cost code / task (e.g. 07 54 23 – TPO field)"]];
+  const readLog = (f, prefix, cols) => {
+    const arr = (v) => (v === undefined ? [] : [].concat(v));
+    const got = cols.map(([k]) => arr(f[`${prefix}_${k}`]));
+    cols.forEach(([k]) => delete f[`${prefix}_${k}`]);
+    return got[0].map((_, n) => Object.fromEntries(cols.map(([k], c) => [k, got[c][n] ?? ""]))).filter((row) => Object.values(row).some((v) => String(v).trim()));
+  };
+  const logTable = (id, heads, rows, btn) => `<table class="tbl" id="${id}"><thead><tr>${heads.map((x) => `<th>${x}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table><button type="button" class="btn btn-sm" data-addrow="${id}">+ Row</button>`;
 
   function reportForm(r, type) {
     const isNew = !r; r = r || { type, date: today(), status: "Draft", crew: [], attendees: "" };
@@ -465,10 +491,25 @@ PT.views = (() => {
       <h3>Manpower</h3>
       <table class="tbl" id="crewTbl"><thead><tr><th>Trade / classification</th><th>Company</th><th>#</th><th>Hours</th></tr></thead><tbody>${crewRows(r.crew || [])}</tbody></table>
       <button type="button" class="btn btn-sm" id="addCrew">+ Row</button>
-      <label>Work performed <textarea name="workPerformed" rows="3" required data-label="Work performed">${esc(r.workPerformed || "")}</textarea></label>
+      <h3>Work log</h3>
+      <label>Work performed <span class="muted small">(areas, grid lines, quantities installed, what was finished)</span><textarea name="workPerformed" rows="4" required data-label="Work performed">${esc(r.workPerformed || "")}</textarea></label>
+      <h3>Material log</h3>
+      ${logTable("matTbl", ["Material", "Qty", "Unit", "Supplier / ticket", "Where used / notes"], logRows("m", MAT_COLS, r.materials || []))}
+      <h3>Equipment log</h3>
+      ${logTable("eqTbl", ["Equipment", "Qty", "Hours used", "Notes"], logRows("e", EQ_COLS, r.equipmentLog?.length ? r.equipmentLog : r.equipment ? [{ name: r.equipment }] : []))}
       <label>Delays / problems <textarea name="delays" rows="2">${esc(r.delays || "")}</textarea></label>
       <label>Safety observations / incidents <textarea name="safety" rows="2">${esc(r.safety || "")}</textarea></label>
-      <div class="form-grid"><label>Equipment on site <input name="equipment" value="${esc(r.equipment || "")}"></label><label>Visitors / inspections <input name="visitors" value="${esc(r.visitors || "")}"></label></div>`;
+      <label>Visitors / inspections <input name="visitors" value="${esc(r.visitors || "")}"></label>
+      <label>Notes <span class="muted small">(anything else about the work today – conditions, coordination, what's next)</span><textarea name="notes" rows="3">${esc(r.notes || "")}</textarea></label>
+      <h3>Photos</h3>
+      <div class="photo-strip" id="rpStrip">${photoStrip(r.photoIds)}<button type="button" class="btn" id="rpAddPh">+ Add photo</button></div>`;
+    else if (type === "Time Sheet") fields = `
+      <div class="form-grid"><label>Foreman / submitted by <input name="foreman" value="${esc(r.foreman || store.get().user.name)}"></label><label>Job / area <input name="jobArea" value="${esc(r.jobArea || "")}" placeholder="e.g. Roof Area A"></label></div>
+      <p class="muted small">Enter start/end and lunch (minutes) – hours are figured for you – or type the hours.</p>
+      ${logTable("tsTbl", ["Worker", "Classification", "Start", "End", "Lunch (min)", "Hours", "Cost code / task"], logRows("w", TS_COLS, r.workers || []))}
+      <datalist id="clsList">${CLASSIFICATIONS.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
+      <p><b>Total hours: <span id="tsTotal">${tsHours(r)}</span></b></p>
+      <label>Notes <textarea name="notes" rows="2">${esc(r.notes || "")}</textarea></label>`;
     else if (type === "Toolbox Talk") fields = `
       <label>Topic <input name="topic" required data-label="Topic" value="${esc(r.topic || "")}" placeholder="Lockout / Tagout"></label>
       <label>Presented by <input name="presenter" value="${esc(r.presenter || store.get().user.name)}"></label>
@@ -499,6 +540,13 @@ PT.views = (() => {
           rec.crew = t.map((x, k) => ({ trade: x, company: co[k], count: n[k], hours: hr[k] })).filter((c) => c.trade || c.count);
           ["c_trade", "c_company", "c_count", "c_hours"].forEach((k) => delete rec[k]);
         }
+        if (type === "Daily Report") {
+          rec.materials = readLog(rec, "m", MAT_COLS);
+          rec.equipmentLog = readLog(rec, "e", EQ_COLS);
+          rec.equipment = rec.equipmentLog.map((x) => `${x.name}${x.qty ? ` (${x.qty})` : ""}`).join(", ");
+          rec.photoIds = [...(r.photoIds || []), ...(el._pendingPhotos || [])];
+        }
+        if (type === "Time Sheet") rec.workers = readLog(rec, "w", TS_COLS).map((w) => ({ ...w, hours: hrsOf(w) }));
         if (f.j_step !== undefined) {
           const s = arr(f.j_step), hz = arr(f.j_hazard), c = arr(f.j_control);
           rec.jha = s.map((x, k) => ({ step: x, hazard: hz[k], control: c[k] })).filter((j) => j.step || j.hazard);
@@ -507,10 +555,24 @@ PT.views = (() => {
         rec.status = form._submit ? "Submitted" : (r.status || "Draft");
         if (isNew) store.add("reports", { ...rec, createdBy: store.get().user.name }, `Created ${type} for ${rec.date}`);
         else store.update("reports", r.id, rec, `Updated ${type} for ${rec.date}`);
+        if (isNew && rec.photoIds) rec.photoIds.forEach((pid) => { const p = store.find("photos", pid); if (p) p.reportDate = rec.date; });
         if (rec.status === "Submitted") store.event("report_submitted", { kind: type, crew: (rec.crew || []).length, attendees: (rec.attendees || "").split("\n").filter((x) => x.trim()).length });
         route();
       },
     });
+    el._pendingPhotos = [];
+    const rp = $("#rpAddPh", el);
+    if (rp) rp.onclick = () => addPhoto({}, (p) => { el._pendingPhotos.push(p.id); rp.before(h(`<img src="${p.dataUrl}">`)); });
+    $$("[data-pv]", el).forEach((im) => (im.onclick = () => photoViewer(im.dataset.pv)));
+    const COLS = { matTbl: ["m", MAT_COLS], eqTbl: ["e", EQ_COLS], tsTbl: ["w", TS_COLS] };
+    const wireCls = () => $$("input[name=w_classification]", el).forEach((x) => x.setAttribute("list", "clsList"));
+    wireCls();
+    $$("[data-addrow]", el).forEach((b) => (b.onclick = () => { const [px, cols] = COLS[b.dataset.addrow]; $(`#${b.dataset.addrow} tbody`, el).insertAdjacentHTML("beforeend", logRows(px, cols, [{}])); wireCls(); }));
+    const tsT = $("#tsTbl", el);
+    if (tsT) tsT.oninput = () => {
+      const rows = $$("tbody tr", tsT).map((tr) => Object.fromEntries(TS_COLS.map(([k]) => [k, $(`[name=w_${k}]`, tr).value])));
+      $("#tsTotal", el).textContent = rows.reduce((s, w) => s + hrsOf(w), 0);
+    };
     const addCrew = $("#addCrew", el);
     if (addCrew) addCrew.onclick = () => $("#crewTbl tbody", el).insertAdjacentHTML("beforeend", crewRows([{ trade: "", company: "", count: "", hours: "" }]));
     $("#submitRpt", el).onclick = () => { const form = el.querySelector("form"); form._submit = true; form.requestSubmit(); };
@@ -548,9 +610,9 @@ PT.views = (() => {
         const f = inp.files[0]; inp.remove(); if (!f) return;
         if (f.size > 8e6) return toast("File too large for the practice app (8 MB max)", "warn");
         const isText = /^text\/|json|csv/.test(f.type) || /\.(txt|md|csv)$/i.test(f.name);
-        const rec = { name: f.name, kind: isText ? "text" : f.type === "application/pdf" ? "pdf" : "file", uploadedAt: new Date().toISOString() };
+        const rec = { name: f.name, kind: isText ? "text" : f.type === "application/pdf" ? "pdf" : "file", uploadedAt: new Date().toISOString(), uploadedBy: store.get().user.name };
         if (isText) rec.content = await f.text(); else rec.dataUrl = await U.readFileAsDataURL(f);
-        modal({ title: "Upload to folder", body: `<label>Folder <input name="folder" list="fl" value="${esc(docFolder || "General")}"><datalist id="fl">${folders.map((x) => `<option value="${esc(x)}">`).join("")}</datalist></label>`, onSubmit: (v) => { store.add("docs", { ...rec, folder: v.folder || "General" }, `Uploaded ${f.name}`); route(); } });
+        modal({ title: "Upload to folder", body: `<label>Folder <input name="folder" list="fl" value="${esc(docFolder || "General")}"><datalist id="fl">${[...new Set([...folders, "Materials", "Material Specs & Brochures", "Specifications", "Submittals"])].map((x) => `<option value="${esc(x)}">`).join("")}</datalist></label>`, onSubmit: (v) => { store.add("docs", { ...rec, folder: v.folder || "General" }, `Uploaded ${f.name}`); store.event("doc_uploaded", { folder: v.folder || "General" }); route(); } });
       };
       inp.click();
     };
@@ -674,22 +736,27 @@ PT.views = (() => {
   }
   function printReport(title, rows) {
     printWindow(title + " Report", `<table><tr><th>#</th><th>Type</th><th>Title / description</th><th>Status</th><th>Assignee</th><th>Due</th><th>Location</th><th>Sheet</th><th>Photos</th></tr>
-      ${rows.map((i) => `<tr><td>${i.number}</td><td>${esc(i.type)}</td><td><b>${esc(i.title)}</b><br>${esc(i.description || "")}</td><td>${esc(i.status)}</td><td>${esc(i.assignee || "")}</td><td>${fmtDate(i.dueDate)}</td><td>${esc(i.location || "")}</td><td>${esc(store.find("sheets", i.sheetId)?.number || "")}</td><td>${(i.photoIds || []).map((id) => store.find("photos", id)).filter(Boolean).map((p) => `<img src="${p.dataUrl}">`).join("")}</td></tr>`).join("")}</table>`);
+      ${rows.map((i) => `<tr><td>${i.number}</td><td>${esc(i.type)}</td><td><b>${esc(i.title)}</b><br>${esc(i.description || "")}${(i.watchers || []).length ? `<br><i>Watching: ${esc(i.watchers.join(", "))}</i>` : ""}${i.delayDays || i.costImpact ? `<br><i>Delay: ${esc(i.delayDays || 0)} day(s) • Cost increase: ${money(i.costImpact || 0)}</i>` : ""}</td><td>${esc(i.status)}</td><td>${esc(i.assignee || "")}</td><td>${fmtDate(i.dueDate)}</td><td>${esc(i.location || "")}</td><td>${esc(store.find("sheets", i.sheetId)?.number || "")}</td><td>${(i.photoIds || []).map((id) => store.find("photos", id)).filter(Boolean).map((p) => `<img src="${p.dataUrl}">`).join("")}</td></tr>`).join("")}</table>`);
   }
   function printRfi(r) {
     printWindow(`RFI-${String(r.number).padStart(3, "0")}`, `<table>
       <tr><th>Subject</th><td>${esc(r.subject)}</td><th>Status</th><td>${esc(r.status)}</td></tr>
       <tr><th>From</th><td>${esc(r.createdBy)}</td><th>To</th><td>${esc(r.assignedTo)}</td></tr>
-      <tr><th>Date</th><td>${fmtDate(r.createdAt)}</td><th>Response due</th><td>${fmtDate(r.dueDate)}</td></tr>
+      <tr><th>Sent</th><td>${fmtDate(r.sentDate || r.createdAt)}</td><th>Response due</th><td>${fmtDate(r.dueDate)}</td></tr>
       <tr><th>Cost impact</th><td>${esc(r.costImpact)}</td><th>Schedule impact</th><td>${esc(r.scheduleImpact)}</td></tr>
       <tr><th>Sheets</th><td colspan=3>${(r.sheetIds || []).map((id) => store.find("sheets", id)?.number).join(", ")}</td></tr></table>
       <h3>Question</h3><div class="box">${esc(r.question)}</div><h3>Suggested solution</h3><div class="box">${esc(r.suggestion || "—")}</div>
       <h3>Answer</h3><div class="box">${esc(r.answer || "(awaiting response)")}</div>`);
   }
   function printForm(r) {
-    const skip = ["id", "projectId", "createdAt", "updatedAt", "crew", "jha", "type"];
+    const skip = ["id", "projectId", "createdAt", "updatedAt", "crew", "jha", "type", "materials", "equipmentLog", "workers", "photoIds", "equipment"];
     let html = `<table>${Object.entries(r).filter(([k]) => !skip.includes(k)).map(([k, v]) => `<tr><th>${esc(k)}</th><td style="white-space:pre-wrap">${esc(v)}</td></tr>`).join("")}</table>`;
     if (r.crew?.length) html += `<h3>Manpower</h3><table><tr><th>Trade</th><th>Company</th><th>#</th><th>Hours</th></tr>${r.crew.map((c) => `<tr><td>${esc(c.trade)}</td><td>${esc(c.company)}</td><td>${esc(c.count)}</td><td>${esc(c.hours)}</td></tr>`).join("")}</table>`;
+    if (r.materials?.length) html += `<h3>Material log</h3><table><tr><th>Material</th><th>Qty</th><th>Unit</th><th>Supplier / ticket</th><th>Where used / notes</th></tr>${r.materials.map((m) => `<tr><td>${esc(m.material)}</td><td>${esc(m.qty)}</td><td>${esc(m.unit)}</td><td>${esc(m.supplier)}</td><td>${esc(m.use)}</td></tr>`).join("")}</table>`;
+    if (r.equipmentLog?.length) html += `<h3>Equipment log</h3><table><tr><th>Equipment</th><th>Qty</th><th>Hours</th><th>Notes</th></tr>${r.equipmentLog.map((m) => `<tr><td>${esc(m.name)}</td><td>${esc(m.qty)}</td><td>${esc(m.hours)}</td><td>${esc(m.notes)}</td></tr>`).join("")}</table>`;
+    else if (r.equipment) html += `<h3>Equipment</h3><div class="box">${esc(r.equipment)}</div>`;
+    if (r.workers?.length) html += `<h3>Time sheet</h3><table><tr><th>Worker</th><th>Classification</th><th>Start</th><th>End</th><th>Lunch</th><th>Hours</th><th>Cost code / task</th></tr>${r.workers.map((w) => `<tr><td>${esc(w.name)}</td><td>${esc(w.classification)}</td><td>${esc(w.start)}</td><td>${esc(w.end)}</td><td>${esc(w.lunch)}</td><td>${esc(w.hours)}</td><td>${esc(w.costCode)}</td></tr>`).join("")}<tr><th colspan=5>Total</th><th>${tsHours(r)}</th><td></td></tr></table>`;
+    if (r.photoIds?.length) html += `<h3>Photos</h3>${r.photoIds.map((id) => store.find("photos", id)).filter(Boolean).map((p) => `<img src="${p.dataUrl}" title="${esc(p.caption || "")}">`).join("")}`;
     if (r.jha?.length) html += `<h3>Hazard analysis</h3><table><tr><th>Step</th><th>Hazard</th><th>Control</th></tr>${r.jha.map((j) => `<tr><td>${esc(j.step)}</td><td>${esc(j.hazard)}</td><td>${esc(j.control)}</td></tr>`).join("")}</table>`;
     printWindow(`${r.type} – ${fmtDate(r.date)}`, html);
   }

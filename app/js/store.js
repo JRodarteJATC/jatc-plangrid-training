@@ -37,6 +37,14 @@ PT.store = (() => {
     }, 250);
   }
 
+  /* The course instructor is on every project's team so apprentices can assign / send to him. */
+  const INSTRUCTOR = { name: "Juan Rodarte", role: "Instructor", company: "Central Valley JATC", email: "", phone: "" };
+  function ensureInstructor(s) {
+    for (const p of s.projects || []) {
+      if (!(s.team || []).some((t) => t.projectId === p.id && t.name === INSTRUCTOR.name)) s.team.push({ ...INSTRUCTOR, id: uid("usr"), projectId: p.id });
+    }
+  }
+
   /* ---------- seed data ---------- */
   function seedProject() {
     const pid = uid("prj");
@@ -47,7 +55,7 @@ PT.store = (() => {
       { id: uid("usr"), projectId: pid, name: "Priya Shah", role: "Architect", company: "Sample Architects Inc.", email: "pshah@example.com", phone: "559-555-0103" },
       { id: uid("usr"), projectId: pid, name: "Tom Reyes", role: "Superintendent", company: "ABC Builders (GC)", email: "treyes@example.com", phone: "559-555-0104" },
       { id: uid("usr"), projectId: pid, name: "Ken Ito", role: "Manufacturer's Rep", company: "Sample Membrane Mfg. (Tech Services)", email: "kito@example.com", phone: "559-555-0105" },
-      { id: uid("usr"), projectId: pid, name: "Instructor", role: "Instructor", company: "Central Valley JATC", email: "", phone: "" },
+      { ...INSTRUCTOR, id: uid("usr"), projectId: pid },
     ];
     // group sample sheets by number -> versions
     const sheets = [];
@@ -75,10 +83,10 @@ PT.store = (() => {
       { id: uid("sub"), projectId: pid, number: "07 13 26-01", specSection: "07 13 26", title: "Self-Adhering Sheet Waterproofing", type: "Product Data", status: "Approved as Noted", dueDate: "2026-08-25", ballInCourt: "Maria Lopez", notes: "Use low-temperature primer when surface temp is below 40°F." },
     ];
     const docs = [
-      { id: uid("doc"), projectId: pid, folder: "Specifications", name: "07 54 23 – TPO Roofing.txt", kind: "text", content: SPEC_075423, uploadedAt: nowIso() },
-      { id: uid("doc"), projectId: pid, folder: "Specifications", name: "07 13 26 – Self-Adhering Sheet Waterproofing.txt", kind: "text", content: SPEC_071326, uploadedAt: nowIso() },
-      { id: uid("doc"), projectId: pid, folder: "ASIs & Bulletins", name: "ASI-01 – RTU-4 Added.txt", kind: "text", content: ASI01, uploadedAt: nowIso() },
-      { id: uid("doc"), projectId: pid, folder: "Safety", name: "Toolbox Talk – Fall Protection on Low-Slope Roofs.txt", kind: "text", content: TBT_FALL, uploadedAt: nowIso() },
+      { id: uid("doc"), projectId: pid, folder: "Specifications", name: "07 54 23 – TPO Roofing.txt", kind: "text", content: SPEC_075423, uploadedAt: nowIso(), seed: true },
+      { id: uid("doc"), projectId: pid, folder: "Specifications", name: "07 13 26 – Self-Adhering Sheet Waterproofing.txt", kind: "text", content: SPEC_071326, uploadedAt: nowIso(), seed: true },
+      { id: uid("doc"), projectId: pid, folder: "ASIs & Bulletins", name: "ASI-01 – RTU-4 Added.txt", kind: "text", content: ASI01, uploadedAt: nowIso(), seed: true },
+      { id: uid("doc"), projectId: pid, folder: "Safety", name: "Toolbox Talk – Fall Protection on Low-Slope Roofs.txt", kind: "text", content: TBT_FALL, uploadedAt: nowIso(), seed: true },
     ];
     const reports = [
       { id: uid("rpt"), projectId: pid, type: "Daily Report", date: "2026-09-14", weather: "Sunny", tempHigh: "96", tempLow: "64", crew: [{ trade: "Roofer – JW", company: "Valley Roofing Co.", count: "3", hours: "8" }, { trade: "Apprentice", company: "Valley Roofing Co.", count: "2", hours: "8" }], workPerformed: "Roof Area A: installed vapor retarder and 2 layers flat polyiso, grid lines 0–30'. Set tapered panels around RD-1. Night seal installed at 30'.", delays: "Started 1 hr late – dew on deck.", safety: "Toolbox talk: warning lines & heat illness. Water/shade break every hour. No incidents.", equipment: "Hoist (1), hot-air welder (2), 60-ft boom (1)", visitors: "Ken Ito (Mfr rep) – deck & VR inspection", status: "Submitted", createdBy: "Maria Lopez", createdAt: nowIso() },
@@ -105,6 +113,7 @@ PT.store = (() => {
     const saved = await load();
     state = saved && saved.version === VERSION ? saved : freshState();
     if (/^\d(st|nd|rd|th) Year$/.test(state.user?.classYear || "")) state.user.classYear = PT.util.DEFAULT_CLASS;
+    ensureInstructor(state);
     persist();
     return state;
   }
@@ -157,6 +166,7 @@ PT.store = (() => {
     state.projects.push(p);
     state.activeProjectId = p.id;
     state.team.push({ id: uid("usr"), projectId: p.id, name: state.user.name, role: state.user.role, company: "", email: "", phone: "" });
+    ensureInstructor(state);
     log(`Created project ${name}`);
     emit();
     return p;
@@ -168,6 +178,7 @@ PT.store = (() => {
     const s = JSON.parse(text);
     if (!s || !s.projects || !s.sheets) throw new Error("Not a Plan Trainer backup file");
     s.version = VERSION;
+    ensureInstructor(s);
     state = s; emit();
   }
 

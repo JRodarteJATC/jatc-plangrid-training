@@ -205,5 +205,84 @@ PT.grading = (() => {
     ]);
   }
 
-  return { scoreSet, lab2, lab4, lab5, lab6, lab7, lab3app, finalPractical, rfiRubric };
+
+  /* ---------- 3A PlanGrid Project (whole-project assignment) ----------
+     Scored on the apprentice's best project (they may build it in the sample project or in a
+     new project with real plans). Requirements from the "3A PlanGrid Project" hand-out.        */
+  function project3a() {
+    const S = PT.store.get(), who = me();
+    const isInstr = (name, team) => /rodarte/i.test(name || "") || team.some((t) => t.name === name && t.role === "Instructor");
+    const results = (S.projects || []).map((p) => {
+      const of = (c) => (S[c] || []).filter((x) => x.projectId === p.id);
+      const team = of("team");
+      const mkp = of("markups").filter((m) => m.createdBy === who);
+      const published = (sheetId) => mkp.some((m) => m.sheetId === sheetId && m.layer === "published") && !mkp.some((m) => m.sheetId === sheetId && m.layer === "personal");
+      const txt = (v, n) => String(v || "").trim().length >= n;
+
+      // Daily reports: best 5, different dates
+      const drAll = of("reports").filter((r) => r.type === "Daily Report" && r.createdBy === who && r.status === "Submitted");
+      const drScore = (r) => [txt(r.workPerformed, 40), (r.materials || []).some((m) => m.material && m.qty), (r.equipmentLog || []).some((e) => e.name) || txt(r.equipment, 3), txt(r.notes, 25), (r.crew || []).some((c) => +c.count > 0)];
+      const byDate = {};
+      for (const r of drAll) { const sc = drScore(r).filter(Boolean).length; if (!byDate[r.date] || sc > byDate[r.date].sc) byDate[r.date] = { r, sc }; }
+      const dr = Object.values(byDate).sort((a, b) => b.sc - a.sc).slice(0, 5).map((x) => x.r);
+      const cnt = (f) => dr.filter(f).length;
+      const drPhotos = dr.filter((r) => (r.photoIds || []).some((id) => (S.photos || []).some((ph) => ph.id === id))).length;
+
+      // Documents
+      const docs = of("docs").filter((d) => !d.seed && (d.uploadedBy ? d.uploadedBy === who : true));
+
+      // Time sheets for each daily-report day
+      const ts = of("reports").filter((r) => r.type === "Time Sheet" && r.createdBy === who && r.status === "Submitted" && (r.workers || []).some((w) => w.name && +w.hours > 0));
+      const tsDays = dr.filter((r) => ts.some((t) => t.date === r.date)).length;
+      const tsComplete = dr.filter((r) => ts.some((t) => t.date === r.date && (t.workers || []).every((w) => w.name && w.classification && +w.hours > 0))).length;
+
+      // Tasks
+      const taskScore = (i) => [
+        !!i.assignee && team.some((t) => t.name === i.assignee),
+        (i.watchers || []).some((w) => isInstr(w, team)),
+        txt(i.description, 40),
+        (i.photoIds || []).length > 0,
+        i.sheetId && i.x != null && published(i.sheetId),
+        String(i.delayDays ?? "") !== "" || String(i.costImpact ?? "") !== "",
+      ];
+      const tasks = of("issues").filter((i) => i.createdBy === who && i.type === "Task").map((i) => ({ i, s: taskScore(i) })).sort((a, b) => b.s.filter(Boolean).length - a.s.filter(Boolean).length).slice(0, 3);
+      const tk = (k) => tasks.filter((t) => t.s[k]).length;
+
+      // RFIs to the instructor
+      const rfiScore = (r) => [isInstr(r.assignedTo, team) && r.status !== "Draft", !!r.sentDate || r.status !== "Draft", !!r.dueDate, txt(r.question, 60) && txt(r.subject, 8), (r.sheetIds || []).length > 0 && (r.sheetIds || []).every((id) => published(id))];
+      const rfis = of("rfis").filter((r) => r.createdBy === who).map((r) => ({ r, s: rfiScore(r) })).sort((a, b) => b.s.filter(Boolean).length - a.s.filter(Boolean).length).slice(0, 3);
+      const rk = (k) => rfis.filter((x) => x.s[k]).length;
+
+      const items = [
+        [`5 daily reports submitted (different days) – found ${dr.length}`, frac(dr.length / 5, 5), 5],
+        ["Daily reports – detailed work log (40+ chars)", frac(cnt((r) => drScore(r)[0]) / 5, 4), 4],
+        ["Daily reports – material log filled in", frac(cnt((r) => drScore(r)[1]) / 5, 4), 4],
+        ["Daily reports – equipment log filled in", frac(cnt((r) => drScore(r)[2]) / 5, 4), 4],
+        ["Daily reports – notes at the bottom (25+ chars)", frac(cnt((r) => drScore(r)[3]) / 5, 4), 4],
+        ["Daily reports – manpower entered", frac(cnt((r) => drScore(r)[4]) / 5, 4), 4],
+        [`Photos in at least 3 daily reports – found ${drPhotos}`, frac(drPhotos / 3, 10), 10],
+        [`Material documents uploaded (specs, brochures) – found ${docs.length}`, frac(docs.length / 2, 10), 10],
+        [`Time sheet for each daily-report day – ${tsDays}/${Math.max(dr.length, 5)} days`, frac(tsDays / 5, 10), 10],
+        ["Time sheets complete (name, classification, hours)", frac(tsComplete / 5, 5), 5],
+        [`3 tasks created (Type: Task) – found ${tasks.length}`, frac(tasks.length / 3, 3), 3],
+        ["Tasks assigned to a team member", frac(tk(0) / 3, 3), 3],
+        ["Instructor in the Watching field", frac(tk(1) / 3, 3), 3],
+        ["Tasks detailed (40+ char description)", frac(tk(2) / 3, 3), 3],
+        ["Tasks have reference photos", frac(tk(3) / 3, 3), 3],
+        ["Tasks pinned on plans, markups published", frac(tk(4) / 3, 3), 3],
+        ["Delay days / cost increase filled in", frac(tk(5) / 3, 2), 2],
+        [`3 RFIs sent to the instructor – found ${rk(0)}`, frac(rk(0) / 3, 6), 6],
+        ["RFIs have sent dates", frac(rk(1) / 3, 3), 3],
+        ["RFIs have due dates", frac(rk(2) / 3, 3), 3],
+        ["RFIs are real, detailed questions (60+ chars)", frac(rk(3) / 3, 4), 4],
+        ["RFIs reference sheets with published markups", frac(rk(4) / 3, 4), 4],
+      ];
+      return { project: p.name, ...rub(items) };
+    });
+    const best = results.sort((a, b) => b.earned - a.earned)[0] || rub([["No project", 0, 100]]);
+    if (best.project && (S.projects || []).length > 1) best.items = [[`Graded project: ${best.project}`, 0, 0], ...best.items];
+    return best;
+  }
+
+  return { scoreSet, lab2, lab4, lab5, lab6, lab7, lab3app, finalPractical, rfiRubric, project3a };
 })();
