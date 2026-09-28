@@ -2,12 +2,13 @@
    quizzes, worksheets, lab work, the final, and training missions.
    Nothing is uploaded – files are read in this browser only.                */
 (() => {
-  const { esc, $, $$, h, toast, modal, download, toCSV, fmtDateTime, today } = PT.util;
+  const { esc, $, $$, h, toast, modal, download, toCSV, fmtDateTime, fmtDate, today } = PT.util;
   const G = PT.grading, Q = PT.quizzes;
   const A = PT.samples.answers;
   const MODS = PT.training.MODULES;
   const ALL = MODS.flatMap((m) => m.missions);
   const GB_KEY = "pt-gradebook-v2", KEY_KEY = "pt-grading-key";
+  PT.store.viewOnly(); // grading reads apprentice files – never save them over this browser's own project
 
   let students = [];
   let classFilter = "";
@@ -16,6 +17,11 @@
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } };
   let gradebook = load(GB_KEY, {});
   let gkey = load(KEY_KEY, null);
+  // Your answers to apprentice RFIs (kept in this browser until you send the answers file)
+  const ANS_KEY = "pt-rfi-answers";
+  let rfiAnswers = load(ANS_KEY, {});
+  let myName = load("pt-instructor-name", "Juan Rodarte");
+  const toMe = (x) => /rodarte|instructor/i.test(x.assignedTo || "") || (x.assignedTo && x.assignedTo === myName);
 
   const ASSESS = [
     ...["quiz1", "quiz2", "quiz3", "quiz4", "quiz5", "quiz6"].map((id, i) => ({ id, label: `Q${i + 1}`, title: Q.find(id).title, group: "Quizzes" })),
@@ -90,7 +96,13 @@
         };
       }
       r.issues = L("issues").filter((i) => i.createdBy === me);
-      r.rfis = L("rfis").filter((x) => x.createdBy === me);
+      // RFIs from every project (the 3A project may be a separate project with real plans)
+      r.rfis = (state.rfis || []).filter((x) => x.createdBy === me).map((x) => {
+        const shs = (state.sheets || []).filter((sh) => (x.sheetIds || []).includes(sh.id));
+        return { ...x, project: (state.projects || []).find((p) => p.id === x.projectId)?.name || "",
+          sheets: shs.map((sh) => sh.number).join(", "),
+          published: (state.markups || []).filter((m) => (x.sheetIds || []).includes(m.sheetId) && m.createdBy === me && m.layer === "published").length };
+      });
       r.reports = L("reports").filter((x) => x.createdBy === me);
       r.activity = L("activity").slice(0, 50);
       r.lastAt = [...L("activity").map((a) => a.at), ...(state.events || []).map((e) => e.at)].sort().pop();
@@ -150,6 +162,7 @@
           ${students.length ? `<select id="clsF" title="Filter by class (Exhibit C week)"><option value="">All classes</option>${[...new Set(students.map((x) => x.r.classYear))].sort().map((c) => `<option ${c === classFilter ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>` : ""}
           <span class="badge ${gkey ? "st-Closed" : "st-Open"}">${gkey ? "✔ Answer key loaded" : "Answer key not loaded"}</span>
           ${gkey ? '<button class="btn" id="forgetKey" title="Remove the answer key from this browser (do this on shared computers)">Forget key</button>' : ""}
+          ${students.length ? `<button class="btn ${inbox().filter((x) => !answered(x)).length ? "btn-primary" : ""}" id="inboxBtn">📨 RFI inbox (${inbox().filter((x) => !answered(x)).length} to answer)</button>` : ""}
           <button class="btn" id="csvBtn" ${students.length ? "" : "disabled"}>⤓ Export gradebook CSV</button>
           <button class="btn" id="clrBtn" ${students.length ? "" : "disabled"}>Clear files</button>
         </div></div>
@@ -165,6 +178,7 @@
     drop.ondragleave = () => drop.classList.remove("over");
     drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles([...e.dataTransfer.files]); };
     $("#csvBtn").onclick = exportCSV;
+    if ($("#inboxBtn")) $("#inboxBtn").onclick = () => openInbox();
     if ($("#forgetKey")) $("#forgetKey").onclick = () => { gkey = null; try { localStorage.removeItem(KEY_KEY); } catch { } regrade(); toast("Answer key removed from this browser", "ok"); };
     if ($("#clsF")) $("#clsF").onchange = (e) => { classFilter = e.target.value; render(); };
     $("#clrBtn").onclick = () => { students = []; render(); };
@@ -219,21 +233,78 @@
     const body = `<div class="detail">
       <p class="muted">File: ${esc(stu.file)} • Last activity ${fmtDateTime(r.lastAt)} • Overall <b>${overall(key, r)}%</b> • Missions ${r.done}/${ALL.length}</p>
       ${ASSESS.map(sect).join("")}
-      <details class="card"><summary><b>RFIs written (${r.rfis.length})</b></summary>${r.rfis.map((x) => `<p><b>RFI-${String(x.number).padStart(3, "0")}: ${esc(x.subject)}</b> <span class="badge">${esc(x.status)}</span></p><pre>Q: ${esc(x.question)}\n\nSuggested: ${esc(x.suggestion || "—")}\nCost: ${esc(x.costImpact)} • Schedule: ${esc(x.scheduleImpact)}${x.answer ? "\n\nAnswer: " + esc(x.answer) : ""}</pre>`).join("") || "<p class='muted'>None.</p>"}</details>
+      <details class="card" ${r.rfis.some((x) => toMe(x) && !answered(x)) ? "open" : ""}><summary><b>RFIs written (${r.rfis.length})</b> ${r.rfis.filter((x) => toMe(x) && !answered(x)).length ? `<span class="badge st-Open">${r.rfis.filter((x) => toMe(x) && !answered(x)).length} to answer</span>` : ""}</summary>${r.rfis.map((x) => rfiCard(r.name, x)).join("") || "<p class='muted'>None.</p>"}
+        ${r.rfis.length ? `<p class="small muted">Type your answers, then use <b>📨 RFI inbox → Download answers file</b> and send that file to the class.</p>` : ""}</details>
       <details class="card"><summary><b>Issues & punch (${r.issues.length})</b></summary>${r.issues.map((i) => `<p>#${i.number} <b>${esc(i.title)}</b> – ${esc(i.type)}, ${esc(i.status)}, ${esc(i.assignee || "unassigned")}, due ${esc(i.dueDate || "—")}, ${(i.photoIds || []).length} photo(s)</p>`).join("") || "<p class='muted'>None.</p>"}</details>
       <details class="card"><summary><b>Reports & forms (${r.reports.length})</b></summary>${r.reports.map((x) => `<p><b>${esc(x.type)} – ${esc(x.date)}</b> (${esc(x.status)})</p><pre>${esc(x.workPerformed || x.topic || x.task || "")}${x.delays ? "\nDelays: " + esc(x.delays) : ""}${x.attendees ? "\nAttendees: " + esc(x.attendees.split("\n").join(", ")) : ""}</pre>`).join("") || "<p class='muted'>None.</p>"}</details>
       <details class="card"><summary><b>Training missions ${r.done}/${ALL.length}</b></summary>${MODS.map((m) => `<p><b>${esc(m.title)}</b><br>${m.missions.map((x) => `${r.missions[x.id] ? "✔" : "○"} ${esc(x.title)}`).join("<br>")}</p>`).join("")}</details>
       <details class="card"><summary><b>Recent activity</b></summary><ul class="activity">${r.activity.map((a) => `<li><span class="muted">${fmtDateTime(a.at)}</span> ${esc(a.text)}</li>`).join("")}</ul></details>
     </div>`;
     const { el } = modal({ title: r.name, body, wide: true, cancelLabel: "Close", extraButtons: `<button type="button" class="btn" id="openApp">Open full project in app</button>` });
+    wireAnswers(el);
+    el.addEventListener("click", (e) => { if (e.target === el || e.target.closest("[data-close]")) setTimeout(render); });
     $$("input[data-ov]", el).forEach((inp) => (inp.onchange = () => {
       const g = (gradebook[key] ||= {}); g.ov = g.ov || {};
       if (inp.value === "") delete g.ov[inp.dataset.ov]; else g.ov[inp.dataset.ov] = inp.value;
       save(GB_KEY, gradebook); render(); toast("Override saved", "ok");
     }));
     $("#openApp", el).onclick = () => PT.util.confirmBox("This replaces the project stored in THIS browser with the apprentice's work (export your own first if needed). Continue?", async () => {
-      await PT.store.init(); PT.store.importJSON(JSON.stringify(stu.state)); setTimeout(() => (location.href = "index.html#/"), 800);
+      PT.store.viewOnly(false); await PT.store.init(); PT.store.importJSON(JSON.stringify(stu.state)); setTimeout(() => (location.href = "index.html#/"), 800);
     }, "Open in app");
+  }
+
+  /* ---------- RFI inbox: read apprentice RFIs, answer them, send the answers back ---------- */
+  const inbox = () => shown().flatMap(({ r }) => r.rfis.filter((x) => x.status !== "Draft").map((x) => ({ ...x, who: r.name })));
+  const answered = (x) => !!(rfiAnswers[x.id]?.answer || x.answer);
+  function rfiCard(who, x) {
+    const mine = rfiAnswers[x.id];
+    const late = x.dueDate && x.dueDate < today() && !answered(x);
+    return `<div class="card rfi-card ${toMe(x) ? "" : "muted-card"}">
+      <div class="row gap" style="justify-content:space-between;flex-wrap:wrap"><b>${esc(who)} – RFI-${String(x.number).padStart(3, "0")}: ${esc(x.subject)}</b>
+        <span>${x.answer ? '<span class="badge st-Closed">Answered in their app</span>' : mine?.answer ? '<span class="badge st-InReview">Answer ready to send</span>' : `<span class="badge ${late ? "st-Open" : ""}">${esc(x.status)}${late ? " – OVERDUE" : ""}</span>`}</span></div>
+      <p class="small muted">To: <b>${esc(x.assignedTo || "—")}</b> · Sent ${fmtDate(x.sentDate || x.createdAt)} · Due ${fmtDate(x.dueDate) || "—"} · Sheets: ${esc(x.sheets || "—")} (${x.published} published markup${x.published === 1 ? "" : "s"}) · Cost impact: ${esc(x.costImpact)} · Schedule impact: ${esc(x.scheduleImpact)}${x.project ? ` · Project: ${esc(x.project)}` : ""}</p>
+      <p><b>Question:</b><br>${esc(x.question).replace(/\n/g, "<br>")}</p>
+      ${x.suggestion ? `<p><b>Suggested solution:</b><br>${esc(x.suggestion).replace(/\n/g, "<br>")}</p>` : ""}
+      ${x.answer ? `<p><b>Answer (${esc(x.answeredBy || "")}):</b><br>${esc(x.answer)}</p>` : ""}
+      <label>Your answer <textarea rows="3" data-ans="${esc(x.id)}" placeholder="Official response – e.g. Approved as suggested. Provide a change order request for the added nailer.">${esc(mine?.answer || "")}</textarea></label>
+      ${mine?.at ? `<p class="small muted">Saved ${fmtDateTime(mine.at)}</p>` : ""}
+    </div>`;
+  }
+  function wireAnswers(el) {
+    $$("textarea[data-ans]", el).forEach((ta) => (ta.oninput = () => {
+      const v = ta.value.trim();
+      if (v) rfiAnswers[ta.dataset.ans] = { answer: v, at: new Date().toISOString(), by: myName }; else delete rfiAnswers[ta.dataset.ans];
+      save(ANS_KEY, rfiAnswers);
+    }));
+  }
+  function openInbox() {
+    let filter = "me";
+    const draw = (el) => {
+      const list = inbox().filter((x) => filter === "all" || toMe(x)).sort((a, b) => answered(a) - answered(b) || String(a.dueDate || "9").localeCompare(String(b.dueDate || "9")));
+      $("#inboxList", el).innerHTML = list.map((x) => rfiCard(x.who, x)).join("") || `<p class="muted">No RFIs ${filter === "me" ? "sent to you" : ""} in the loaded files.</p>`;
+      wireAnswers(el);
+    };
+    const { el } = modal({
+      title: "RFI inbox", wide: true, cancelLabel: "Close",
+      extraButtons: `<button type="button" class="btn btn-primary" id="dlAns">⤓ Download answers file</button>`,
+      body: `<p>RFIs your apprentices sent. Type an answer under each one – it's saved in this browser. When you're done, click
+        <b>Download answers file</b> and send that one file to the whole class (email, LMS, shared drive). Each apprentice opens
+        <b>RFIs → Import instructor answers</b> (or Settings → Import) and only <i>their</i> RFIs are updated to <b>Answered</b>.</p>
+        <div class="row gap"><label class="inline">Answered by <input id="myName" value="${esc(myName)}" style="width:12em"></label>
+        <label class="inline"><select id="inFilter"><option value="me">Sent to me</option><option value="all">All sent RFIs</option></select></label></div>
+        <div id="inboxList"></div>`,
+    });
+    $("#myName", el).onchange = (e) => { myName = e.target.value.trim() || "Juan Rodarte"; save("pt-instructor-name", myName); };
+    $("#inFilter", el).onchange = (e) => { filter = e.target.value; draw(el); };
+    $("#dlAns", el).onclick = () => downloadAnswers();
+    draw(el);
+    el.addEventListener("click", (e) => { if (e.target === el || e.target.closest("[data-close]")) setTimeout(render); });
+  }
+  function downloadAnswers() {
+    const answers = Object.entries(rfiAnswers).map(([id, a]) => ({ id, answer: a.answer, answeredBy: a.by || myName, answeredAt: a.at }));
+    if (!answers.length) return toast("Type at least one answer first", "warn");
+    download(`rfi-answers-${today()}.json`, JSON.stringify({ type: "plan-trainer-rfi-answers", version: 1, from: myName, createdAt: new Date().toISOString(), answers }, null, 1), "application/json");
+    toast(`Answers file downloaded (${answers.length} answer${answers.length === 1 ? "" : "s"}) – send it to the class`, "ok");
   }
 
   function exportCSV() {

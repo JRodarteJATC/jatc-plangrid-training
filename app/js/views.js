@@ -291,7 +291,7 @@ PT.views = (() => {
 
   /* ============ RFIs ============ */
   function rfis(root) {
-    root.innerHTML = header("RFIs – Requests for Information", `<button class="btn" id="csvBtn">⤓ Export CSV</button><button class="btn btn-primary" id="newBtn">+ New RFI</button>`) +
+    root.innerHTML = header("RFIs – Requests for Information", `<button class="btn" id="ansBtn" title="Open the RFI answers file your instructor sent">⤒ Import instructor answers</button><button class="btn" id="csvBtn">⤓ Export CSV</button><button class="btn btn-primary" id="newBtn">+ New RFI</button>`) +
       `<p class="muted">Workflow: <b>Draft</b> → <b>Open</b> (sent, ball in court with the reviewer) → <b>Answered</b> → <b>Closed</b> (answer distributed to the field).</p><div id="tbl"></div>`;
     const list = store.list("rfis").sort((a, b) => b.number - a.number);
     $("#tbl", root).innerHTML = list.length ? `<table class="tbl click"><thead><tr><th>RFI #</th><th>Subject</th><th>Status</th><th>Ball in court</th><th>Sent</th><th>Due</th><th>Cost?</th><th>Schedule?</th><th>Sheets</th></tr></thead><tbody>
@@ -299,7 +299,21 @@ PT.views = (() => {
       </tbody></table>` : `<p class="muted">No RFIs yet.</p>`;
     $$("tr[data-id]", root).forEach((tr) => (tr.onclick = () => rfiForm(store.find("rfis", tr.dataset.id))));
     $("#newBtn", root).onclick = () => rfiForm(null);
+    $("#ansBtn", root).onclick = importAnswers;
     $("#csvBtn", root).onclick = () => { download(`rfis-${today()}.csv`, toCSV(list.map((r) => ({ Number: r.number, Subject: r.subject, Status: r.status, AssignedTo: r.assignedTo, Sent: r.sentDate || "", Due: r.dueDate, Question: r.question, Answer: r.answer || "" }))), "text/csv"); store.event("export", { what: "rfi_csv" }); };
+  }
+
+  function importAnswers() {
+    const inp = h(`<input type="file" accept=".json,application/json" hidden>`); document.body.appendChild(inp);
+    inp.onchange = async () => { const f = inp.files[0]; inp.remove(); if (f) importAnswersText(await f.text()); };
+    inp.click();
+  }
+  function importAnswersText(text) {
+    try {
+      const n = store.applyRfiAnswers(JSON.parse(text));
+      toast(n ? `${n} RFI answer${n === 1 ? "" : "s"} received – open the RFI to read it` : "No new answers for your RFIs in that file", n ? "ok" : "warn");
+      location.hash = "#/rfis"; route();
+    } catch (e) { toast(e.message, "warn"); }
   }
 
   function rfiForm(rfi) {
@@ -715,7 +729,14 @@ PT.views = (() => {
     $("#expBtn", root).onclick = () => { download(`plan-trainer-${s.user.name.replace(/\W+/g, "_")}-${today()}.json`, store.exportJSON(), "application/json"); store.event("export", { what: "backup" }); };
     $("#impBtn", root).onclick = () => {
       const inp = h(`<input type="file" accept=".json,application/json" hidden>`); document.body.appendChild(inp);
-      inp.onchange = async () => { const f = inp.files[0]; inp.remove(); if (!f) return; try { store.importJSON(await f.text()); toast("Backup imported", "ok"); location.hash = "#/"; PT.app.renderChrome(); } catch (e) { toast(e.message, "warn"); } };
+      inp.onchange = async () => {
+        const f = inp.files[0]; inp.remove(); if (!f) return;
+        try {
+          const text = await f.text();
+          if (/"plan-trainer-rfi-answers"/.test(text.slice(0, 200))) return importAnswersText(text); // instructor's RFI answers, not a backup
+          store.importJSON(text); toast("Backup imported", "ok"); location.hash = "#/"; PT.app.renderChrome();
+        } catch (e) { toast(e.message, "warn"); }
+      };
       inp.click();
     };
     $("#resetBtn", root).onclick = () => U.confirmBox("Erase everything and restore the sample project?", () => { store.resetAll(); location.hash = "#/"; PT.app.renderChrome(); toast("Reset complete"); }, "Erase & reset");

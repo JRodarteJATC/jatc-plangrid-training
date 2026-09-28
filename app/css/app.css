@@ -203,3 +203,4 @@ dl.info { display: grid; grid-template-columns: 80px 1fr; gap: 6px; margin: 0 0 
 /* grips + magnifier (tablet-friendly measuring) */
 .grip { cursor: move; }
 .loupe { position: absolute; width: 150px; height: 150px; border-radius: 50%; border: 3px solid #16324f; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); pointer-events: none; z-index: 5; background: #fff; }
+.rfi-card { margin: 10px 0; } .rfi-card p { margin: 6px 0; } .muted-card { opacity: .75; }

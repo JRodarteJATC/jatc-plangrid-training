@@ -321,3 +321,41 @@ test("text tool: edit existing text, and a lost pointer-up never blocks the othe
   await expect.poll(() => page.evaluate(() => PT.store.list("markups").filter((m) => m.type === "line").length)).toBe(1);
   expect(page.errors).toEqual([]);
 });
+
+test("RFI round trip: apprentice sends to instructor, instructor answers in dashboard, apprentice imports answer", async ({ page }) => {
+  await page.goto("/#/settings");
+  await page.fill("#prof input[name=name]", "Rfi Tester");
+  await page.click("#prof button");
+  await page.goto("/#/rfis");
+  await page.click("#newBtn");
+  await page.fill(".modal input[name=subject]", "Cricket at RTU-4 missing on R-102");
+  await page.fill(".modal textarea[name=question]", "R-101 Rev 1 note 6 requires a cricket at RTU-4 but R-102 was not revised. Please provide cricket size and slope.");
+  await page.selectOption(".modal select[name=assignedTo]", "Juan Rodarte");
+  await page.fill(".modal input[name=dueDate]", "2026-12-01");
+  await page.click("#sendNow");
+  await expect.poll(() => page.evaluate(() => PT.store.list("rfis").some((r) => r.assignedTo === "Juan Rodarte"))).toBe(true);
+  const backup = await page.evaluate(() => PT.store.exportJSON());
+  await page.waitForTimeout(600); // let the app save before leaving the page
+
+  await page.goto("/instructor.html");
+  await page.evaluate(() => localStorage.clear()); await page.reload();
+  const ch = page.waitForEvent("filechooser"); await page.click("#pickBtn");
+  await (await ch).setFiles({ name: "rfi.json", mimeType: "application/json", buffer: Buffer.from(backup) });
+  await expect(page.locator("#inboxBtn")).toContainText("1 to answer");
+  await page.click("#inboxBtn");
+  await expect(page.locator(".rfi-card")).toContainText("Cricket at RTU-4");
+  await page.fill(".rfi-card textarea[data-ans]", "Provide a 1/2\" per foot cricket, 4' wide, on the upslope side of RTU-4.");
+  const dl = page.waitForEvent("download"); await page.click("#dlAns");
+  const file = await (await dl).path();
+  const answers = require("fs").readFileSync(file);
+
+  await page.goto("/#/rfis");
+  await expect(page.locator("#ansBtn")).toBeVisible();
+  const ch2 = page.waitForEvent("filechooser"); await page.click("#ansBtn");
+  await (await ch2).setFiles({ name: "rfi-answers.json", mimeType: "application/json", buffer: answers });
+  await expect.poll(() => page.evaluate(() => PT.store.list("rfis").find((r) => r.assignedTo === "Juan Rodarte")?.status)).toBe("Answered");
+  const r = await page.evaluate(() => PT.store.list("rfis").find((r) => r.assignedTo === "Juan Rodarte"));
+  expect(r.answer).toContain("1/2");
+  expect(r.answeredBy).toBe("Juan Rodarte");
+  expect(page.errors).toEqual([]);
+});

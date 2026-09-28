@@ -63,7 +63,7 @@ PT.util = (() => {
     });
     document.body.appendChild(el);
     const first = el.querySelector("input:not([type=hidden]),select,textarea");
-    if (first) setTimeout(() => first.focus(), 30);
+    if (first) setTimeout(() => { if (!el.contains(document.activeElement)) first.focus(); }, 30); // don't steal focus from a field already being typed in
     return { el, close };
   }
 

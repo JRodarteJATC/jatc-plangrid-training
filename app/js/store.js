@@ -27,7 +27,9 @@ PT.store = (() => {
     } catch { return null; }
   }
   let saveTimer = null;
+  let readOnly = false; // set while the Instructor Dashboard is looking at an apprentice's file
   function persist() {
+    if (readOnly || !state) return; // never save someone else's file (or nothing) over this browser's own work
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
       try {
@@ -182,10 +184,31 @@ PT.store = (() => {
     state = s; emit();
   }
 
+  /* Answers file from the instructor (RFI inbox in the Instructor Dashboard). One file for the whole
+     class: only RFIs that exist in this browser are updated. Returns how many were applied.       */
+  function applyRfiAnswers(obj) {
+    if (!obj || obj.type !== "plan-trainer-rfi-answers") throw new Error("Not an RFI answers file");
+    let n = 0;
+    for (const a of obj.answers || []) {
+      const r = state.rfis.find((x) => x.id === a.id);
+      if (!r || !a.answer || r.answer === a.answer) continue;
+      const prev = r.status;
+      Object.assign(r, { answer: a.answer, answeredBy: a.answeredBy || obj.from || "Instructor", answeredAt: a.answeredAt || nowIso(), status: ["Draft", "Open"].includes(prev) ? "Answered" : prev, updatedAt: nowIso() });
+      (r.history = r.history || []).push({ at: a.answeredAt || nowIso(), text: `${r.answeredBy}: answered${prev !== r.status ? ` (${prev} → ${r.status})` : ""}` });
+      state.activity.unshift({ id: uid("act"), projectId: r.projectId, at: nowIso(), by: r.answeredBy, text: `Answered RFI-${r.number}: ${r.subject}` });
+      state.events.push({ at: nowIso(), projectId: r.projectId, type: "rfi_answer_received", id: r.id });
+      n++;
+    }
+    emit();
+    return n;
+  }
+
   /* Instructor dashboard: temporarily read another apprentice's backup without saving it. */
   function swap(s) { const prev = state; state = s; return prev; }
+  // The Instructor Dashboard calls viewOnly() so nothing it does is ever written over this browser's saved project.
+  function viewOnly(on = true) { readOnly = on; }
 
-  return { swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
+  return { applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
 })();
 
 

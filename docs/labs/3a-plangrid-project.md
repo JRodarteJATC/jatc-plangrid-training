@@ -57,6 +57,9 @@ and specs, missing information, field conditions).
 - **Response due** date
 - Reference the **sheets**, and mark up those sheets → **Publish** the markups
 - Click **Save & Send** – the **Sent date** is filled in automatically
+- **Getting the answer:** turn in your backup (Settings → Export backup). When your instructor sends back the
+  **RFI answers file**, open **RFIs → ⤒ Import instructor answers** and choose it. Your RFIs change to
+  **Answered** and show the official answer. Close them once the answer is shared with the crew.
 
 ---
 

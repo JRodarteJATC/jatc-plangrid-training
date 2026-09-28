@@ -112,6 +112,19 @@ sample project or create their own (**Settings → New project**, **Sheets → U
 and add you as a watcher. The dashboard grades the apprentice's best project (column **3A Proj**); labs are
 still graded on the sample project.
 
+**Answering their RFIs (RFI inbox):**
+1. Drop the apprentices' backup files into the Instructor Dashboard.
+2. Click **📨 RFI inbox** (top right – it shows how many are waiting). Every RFI sent to Juan Rodarte is listed
+   with the question, suggested solution, sheets, sent/due dates and cost/schedule impact. Overdue ones are flagged.
+   (Also in each apprentice's detail view.)
+3. Type your answer under each RFI – it's saved in that browser as you type.
+4. Click **⤓ Download answers file** and send that **one file to the whole class** (email, LMS, shared drive).
+5. Apprentices open **RFIs → ⤒ Import instructor answers** (or Settings → Import). Only their own RFIs are
+   updated to **Answered** with your answer, name and date. You can answer more later and send a new file.
+
+To see their markups on the plans, use **Open full project in app** in the apprentice's detail view (on your
+own computer – it replaces the project stored in that browser).
+
 Their backup file includes their photos and uploaded documents, so it can be several MB – use email
 attachments or a shared drive.
 
