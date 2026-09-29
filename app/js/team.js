@@ -181,7 +181,7 @@ PT.team = (() => {
       conns[pid].unsub = col.onSnapshot((snap) => {
         const docs = snap.docChanges().filter((ch) => ch.type !== "removed").map((ch) => ch.doc.data()).filter((d) => d.by !== device || first);
         if (docs.length) applyDocs(pid, docs);
-        if (first) { first = false; conns[pid].status = "· on"; pushAll(pid); }
+        if (first) { first = false; conns[pid].status = "· on"; pushAll(pid); if (location.hash.startsWith("#/teamproject") && !document.querySelector(".modal-backdrop")) PT.app.route(); }
       }, (e) => { conns[pid].status = "· error: " + e.message; });
       if (!timer) timer = setInterval(flush, 1500);
     }
