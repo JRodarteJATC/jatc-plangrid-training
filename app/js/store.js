@@ -265,7 +265,12 @@ PT.store = (() => {
     st.tombstones ||= {};
     let p = st.projects.find((x) => x.id === pid);
     if (!p) { st.projects.push(JSON.parse(JSON.stringify(share.project))); stats.added++; }
-    else if (stamp(share.project) > stamp(p)) Object.assign(p, JSON.parse(JSON.stringify(share.project)));
+    else {
+      const before = p.team ? JSON.parse(JSON.stringify(p.team)) : null;
+      if (stamp(share.project) > stamp(p)) Object.assign(p, JSON.parse(JSON.stringify(share.project)));
+      // membership: the latest add/remove for each person wins, whichever file it came from
+      if (before && p.team && share.project.team) Object.assign(p.team, mergeMembers(before, share.project.team));
+    }
     for (const [id, t] of Object.entries(share.tombstones || {})) {
       const cur = st.tombstones[id];
       if (!cur || cur.at < t.at) st.tombstones[id] = { ...t };
@@ -309,6 +314,29 @@ PT.store = (() => {
     return stats;
   }
 
+  /* Team membership. memberLog[name] = { in: true|false, at, by } – the latest entry for a person wins,
+     so a removal (or a re-add) survives syncing with teammates who still have the old member list. */
+  function mergeMembers(a, b) {
+    const log = { ...(a.memberLog || {}) };
+    for (const [n, e] of Object.entries(b.memberLog || {})) if (!log[n] || String(log[n].at) < String(e.at)) log[n] = e;
+    const names = [...new Set([...(a.members || []), ...(b.members || []), ...Object.keys(log)])];
+    const members = names.filter((n) => (log[n] ? log[n].in : true));
+    const sections = { ...(a.sections || {}), ...(b.sections || {}) };
+    for (const k of Object.keys(sections)) if (sections[k] && !members.includes(sections[k])) sections[k] = "";
+    return { members, memberLog: log, sections };
+  }
+  function setTeamMember(projectId, name, isIn) {
+    const p = state.projects.find((x) => x.id === projectId); if (!p?.team || !name) return;
+    const now = nowIso();
+    p.team.memberLog = { ...(p.team.memberLog || {}), [name]: { in: !!isIn, at: now, by: state.user?.name || "" } };
+    const set = new Set(p.team.members || []); isIn ? set.add(name) : set.delete(name);
+    p.team.members = [...set];
+    for (const k of Object.keys(p.team.sections || {})) if (p.team.sections[k] === name && !isIn) p.team.sections[k] = "";
+    p.updatedAt = now;
+    log(isIn ? `Added ${name} to team ${p.name}` : name === state.user?.name ? `Left team ${p.name}` : `Removed ${name} from team ${p.name}`);
+    emit();
+  }
+
   function newTeamProject({ name, members, withSamples }) {
     let p;
     if (withSamples) {
@@ -334,7 +362,7 @@ PT.store = (() => {
   // The Instructor Dashboard calls viewOnly() so nothing it does is ever written over this browser's saved project.
   function viewOnly(on = true) { readOnly = on; }
 
-  return { TEAM_COLLS, shareFor, mergeTeam, newTeamProject, takeChanges, teamProjectIds, applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
+  return { TEAM_COLLS, shareFor, mergeTeam, setTeamMember, newTeamProject, takeChanges, teamProjectIds, applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
 })();
 
 

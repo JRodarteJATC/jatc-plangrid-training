@@ -24,6 +24,13 @@ Your instructor may let you do the project as a team – each person takes secti
 5. **Before you turn in your backup, sync one last time.** The whole team gets the team score; your instructor also
    sees who did what.
 
+**Changing the team** (Team Project page, member list):
+- **Remove** someone → tap **Remove** next to their name. **Leave** the team yourself → tap **Leave team** next to your name.
+- **+ Add a teammate** adds someone new (or brings back someone who was removed).
+- Then **⤓ Send my team file** so everyone gets the change (with live sync on, it shows up by itself).
+- The person who left or was removed keeps their own work in the project and is graded **on their own**;
+  their work no longer counts for the team. Syncing an old team file does not put them back on the team.
+
 ---
 
 ## 1. Five days of Daily Reports – 45 pts

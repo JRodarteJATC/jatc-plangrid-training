@@ -83,6 +83,47 @@ test("two apprentices build one team project by swapping team files", async ({ b
   expect(errs).toEqual([]);
 });
 
+test("remove a teammate, leave a team, and add someone back – survives syncing old files", async ({ browser }) => {
+  const mk = async () => (await browser.newContext({ acceptDownloads: true })).newPage();
+  const A = await mk(), B = await mk(), C = await mk();
+  const errs = []; for (const p of [A, B, C]) p.on("pageerror", (e) => errs.push(e.message));
+  await fresh(A, "Mateo Ramirez"); await fresh(B, "Luis Herrera"); await fresh(C, "Adrian Castillo");
+  await A.goto("/#/teamproject"); await A.click("#startBtn");
+  await A.fill(".modal input[name=name]", "Team 2");
+  await A.check(".modal input[name=m][value='Luis Herrera']"); await A.check(".modal input[name=m][value='Adrian Castillo']");
+  await A.click(".modal button[type=submit]");
+  const fa = await sendTeamFile(A);
+  await syncFiles(B, [fa]); await syncFiles(C, [fa]);
+  const members = (P) => S(P, () => PT.store.project().team.members.slice().sort());
+
+  // A removes Luis in the app
+  await A.goto("/#/teamproject");
+  await A.click("[data-rm='Luis Herrera']"); await A.click(".modal button.btn-primary, .modal .btn-danger");
+  expect(await members(A)).toEqual(["Adrian Castillo", "Mateo Ramirez"]);
+  // Luis still has the old list; syncing his (older) file back must not re-add him
+  const fb = await sendTeamFile(B);
+  await syncFiles(A, [fb]);
+  expect(await members(A)).toEqual(["Adrian Castillo", "Mateo Ramirez"]);
+  // Luis gets A's file: he sees he was removed, and is not re-added
+  await syncFiles(B, [await sendTeamFile(A)]);
+  expect(await members(B)).toEqual(["Adrian Castillo", "Mateo Ramirez"]);
+  await expect(B.locator(".team-card")).toContainText("no longer on this team");
+
+  // Diego leaves on his own; A gets it from Diego's file
+  await syncFiles(C, [await sendTeamFile(A)]);
+  await C.goto("/#/teamproject"); await C.click("[data-leave]"); await C.click(".modal button.btn-primary, .modal .btn-danger");
+  await syncFiles(A, [await sendTeamFile(C)]);
+  expect(await members(A)).toEqual(["Mateo Ramirez"]);
+  await expect(A.locator(".team-card")).toContainText("left the team");
+
+  // A adds Luis back
+  await A.goto("/#/teamproject"); await A.click("[data-add]");
+  await A.selectOption(".modal select[name=n]", "Luis Herrera"); await A.click(".modal button[type=submit]");
+  await syncFiles(B, [await sendTeamFile(A)]);
+  expect(await members(B)).toEqual(["Luis Herrera", "Mateo Ramirez"]);
+  expect(errs).toEqual([]);
+});
+
 // ---------- live sync against a fake Firebase (shared between both browser contexts through Node) ----------
 const FAKE_FIREBASE = `
 (() => {
