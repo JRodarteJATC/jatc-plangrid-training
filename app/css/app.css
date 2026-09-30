@@ -21,6 +21,7 @@ code, kbd { background: #eef1f5; border: 1px solid var(--line); border-radius: 4
 .brand { color: #fff; text-decoration: none; font-size: 1.05rem; white-space: nowrap; }
 .brand .logo { color: var(--accent); font-size: 1.3rem; }
 .proj { opacity: .85; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
+.proj select { max-width: 30vw; background: var(--navy-2); color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; padding: 5px 8px; font-size: .88rem; }
 .search { flex: 1; display: flex; justify-content: flex-end; }
 .search input { width: min(420px, 100%); border: 0; border-radius: 20px; padding: 8px 14px; font-size: .9rem; }
 .avatar { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--accent); background: var(--navy-2); color: #fff; font-weight: 700; cursor: pointer; flex: none; display: grid; place-items: center; }
@@ -187,7 +188,7 @@ dl.info { display: grid; grid-template-columns: 80px 1fr; gap: 6px; margin: 0 0 
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {
   #menuBtn { display: block; }
-  .proj { display: none; }
+  .proj { max-width: 36vw; } .proj select { max-width: 36vw; font-size: .8rem; padding: 4px 6px; }
   .sidebar { transform: translateX(-100%); transition: transform .2s; box-shadow: 4px 0 20px rgba(0, 0, 0, .2); }
   body.nav-open .sidebar { transform: none; }
   main { left: 0; padding: 16px 14px 60px; }

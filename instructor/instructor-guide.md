@@ -124,7 +124,8 @@ adjust anyone who didn't contribute with an override.
 **Remove** next to a name, **Leave team** next to their own name, or **+ Add a teammate**, then they send their
 team file (or live sync carries it). The latest change wins, even if someone syncs an old file later. When someone
 joins, their earlier tasks, punch items, RFIs and daily reports are copied into the team. A person who left or was
-removed has their work moved to their own project (“<team> – my work”) and hidden from the team; they are graded on
+removed goes back to their own project (their pre-team work is still there, plus what they made in the team) and
+their work is hidden from the team; they are graded on
 **their own** work only and the team's score no longer includes it.
 
 **Answering their RFIs (RFI inbox) – live:**

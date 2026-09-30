@@ -27,8 +27,8 @@ PT.team = (() => {
   }
   function afterTeamChange(pid) {
     const r = store.teamCheck(pid); if (!r) return r;
-    if (r.joined && r.what) toast(`Brought your work into the team from “${r.from}”: ${r.what}`, "ok");
-    if (r.left && r.what) toast(`You're off the team – your work (${r.what}) moved to your own project “${r.to}”`, "ok");
+    if (r.joined && r.what) toast(`Copied your work into the team from “${r.from}”: ${r.what}. “${r.from}” still has it – switch projects with the menu at the top.`, "ok");
+    if (r.left) toast(`You're off the team – you're back in “${r.to}”${r.what ? ` with the work you did in the team (${r.what})` : ""}. Everything you had before joining is still there.`, "ok");
     PT.app.renderChrome && PT.app.renderChrome();
     return r;
   }

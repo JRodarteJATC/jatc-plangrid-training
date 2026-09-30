@@ -94,7 +94,7 @@ test("remove a teammate, leave a team, and add someone back – survives syncing
   await A.click(".modal button[type=submit]");
   const fa = await sendTeamFile(A);
   await syncFiles(B, [fa]); await syncFiles(C, [fa]);
-  const members = (P) => S(P, () => PT.store.project().team.members.slice().sort());
+  const members = (P) => S(P, () => PT.store.get().projects.find((p) => p.name === "Team 2").team.members.slice().sort());
 
   // A removes Luis in the app
   await A.goto("/#/teamproject");
@@ -157,10 +157,16 @@ test("joining brings your earlier work into the team; leaving takes it out and h
   // A gets Luis's work
   await syncFiles(A, [await sendTeamFile(B)]);
   expect(await S(A, () => PT.store.list("rfis").map((r) => r.subject).sort())).toEqual(["Luis RFI", "Mateo RFI"]);
-  // Luis leaves: his work moves to his own project, and after A syncs it is hidden from the team
+  // Luis makes one more RFI inside the team, then leaves: he goes back to his own project, which still has everything
+  // he had before joining (no duplicates) plus the RFI he made in the team; after A syncs it is hidden from the team
+  await S(B, () => PT.store.add("rfis", { number: PT.store.nextNumber("rfis"), subject: "Luis team RFI", question: "q", status: "Open", createdBy: "Luis Herrera", sheetIds: [] }));
   await B.goto("/#/teamproject"); await B.click("[data-leave]"); await B.click(".modal button.btn-primary");
-  const mine = await S(B, () => ({ proj: PT.store.project().name, rfis: PT.store.list("rfis").map((r) => r.subject), teamHasLuis: PT.store.get().rfis.some((r) => r.subject === "Luis RFI" && PT.store.get().projects.find((p) => p.id === r.projectId)?.team) }));
-  expect(mine).toEqual({ proj: "Team 3 – my work", rfis: ["Luis RFI"], teamHasLuis: false });
+  const mine = await S(B, () => ({ proj: PT.store.project().name, rfis: PT.store.list("rfis").filter((r) => /Luis/.test(r.subject)).map((r) => r.subject).sort(),
+    issues: PT.store.list("issues").filter((i) => /Luis/.test(i.title)).map((i) => i.title).sort(), daily: PT.store.list("reports").filter((r) => r.workPerformed === "Luis daily").length,
+    teamHasTeamRfi: PT.store.get().rfis.some((r) => r.subject === "Luis team RFI" && PT.store.get().projects.find((p) => p.id === r.projectId)?.team) }));
+  expect(mine).toEqual({ proj: "Central Valley Training Center – Bldg B", rfis: ["Luis RFI", "Luis team RFI"], issues: ["Luis punch", "Luis task"], daily: 1, teamHasTeamRfi: false });
+  // the header project switcher lists his projects
+  await expect(B.locator("#projSel option")).toHaveCount(2);
   await syncFiles(A, [await sendTeamFile(B)]);
   expect(await S(A, () => PT.store.list("rfis").map((r) => r.subject))).toEqual(["Mateo RFI"]);
   expect(await S(A, () => PT.store.list("issues").some((i) => /Luis/.test(i.title)))).toBe(false);
@@ -170,7 +176,7 @@ test("joining brings your earlier work into the team; leaving takes it out and h
   await A.goto("/instructor.html"); const ch = A.waitForEvent("filechooser"); await A.click("#pickBtn");
   await (await ch).setFiles([{ name: "a.json", mimeType: "application/json", buffer: bA }, { name: "b.json", mimeType: "application/json", buffer: bB }]);
   await A.click("[data-stu='luis herrera']");
-  await expect(A.locator(".modal")).toContainText("my work");
+  await expect(A.locator(".modal")).toContainText("Luis team RFI");
   expect(errs).toEqual([]);
 });
 
@@ -181,6 +187,7 @@ const FAKE_FIREBASE = `
   const col = (path, filt) => ({
     doc: (id) => ({ _path: path + "/" + id, collection: (c) => col(path + "/" + id + "/" + c) }),
     where: (f, op, val) => col(path, (v) => v[f] === val),
+    get: async () => ({ docs: Object.values(await window.__relayGet(path)).filter((v) => !filt || filt(v)).map((v) => ({ data: () => v })) }),
     onSnapshot(cb) {
       let seen = {};
       const tick = async () => {
@@ -192,7 +199,7 @@ const FAKE_FIREBASE = `
       return () => clearInterval(iv);
     },
   });
-  const db = { collection: (c) => col(c), batch() { const ops = []; return { set: (ref, obj) => ops.push([ref._path, obj]), commit: () => window.__relaySet(ops) }; } };
+  const db = { settings() {}, collection: (c) => col(c), batch() { const ops = []; return { set: (ref, obj) => ops.push([ref._path, obj]), commit: () => window.__relaySet(ops) }; } };
   const app = { auth: () => ({ signInAnonymously: async () => ({}) }), firestore: () => db };
   window.firebase = { apps: [], initializeApp: () => { window.firebase.apps.push(app); return app; }, app: () => app };
 })();`;
@@ -203,7 +210,7 @@ test("live sync: a teammate's change shows up by itself", async ({ browser }) =>
     const ctx = await browser.newContext({ acceptDownloads: true });
     await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/")).map(([k, v]) => [k, v])));
     await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) cloud[k] = v; });
-    await ctx.route("**/js/cloud-config.js", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake' };" }));
+    await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake' };" }));
     await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
     return ctx.newPage();
   };
@@ -230,7 +237,7 @@ test("RFIs sent to the instructor arrive in the dashboard inbox live, and answer
     const ctx = await browser.newContext({ acceptDownloads: true });
     await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/"))));
     await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) cloud[k] = v; });
-    await ctx.route("**/js/cloud-config.js", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
+    await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
     await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
     return ctx.newPage();
   };

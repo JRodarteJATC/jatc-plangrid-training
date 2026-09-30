@@ -14,7 +14,12 @@ PT.app = (() => {
     const s = store.get(), p = store.project();
     const openIss = store.list("issues").filter((i) => i.status === "Open" || i.status === "In Review");
     const counts = { issues: openIss.filter((i) => i.type !== "Punch").length, punch: openIss.filter((i) => i.type === "Punch").length, rfis: store.list("rfis").filter((r) => r.status === "Open").length, training: PT.training.progress() + "%" };
-    $("#projName").textContent = p ? p.name : "";
+    // project switcher: apprentices can always get back to their other projects (sample, team, practice plans…)
+    const pn = $("#projName");
+    if ((s.projects || []).length > 1) {
+      pn.innerHTML = `<select id="projSel" title="Switch project" aria-label="Switch project">${s.projects.map((x) => `<option value="${x.id}" ${x.id === s.activeProjectId ? "selected" : ""}>${x.team ? "👥 " : ""}${PT.util.esc(x.name)}</option>`).join("")}</select>`;
+      $("#projSel").onchange = (e) => { s.activeProjectId = e.target.value; store.emit(); renderChrome(); location.hash = "#/"; route(); PT.util.toast("Switched to " + store.project().name, "ok"); };
+    } else pn.textContent = p ? p.name : "";
     $("#userChip").textContent = PT.util.initials(s.user.name);
     $("#userChip").title = s.user.name;
     $("#nav").innerHTML = NAV.map(([r, i, l]) => `<a href="#/${r}" data-r="${r}"><span class="ni">${i}</span><span class="nl">${l}</span>${counts[r] ? `<span class="count">${counts[r]}</span>` : ""}</a>`).join("");

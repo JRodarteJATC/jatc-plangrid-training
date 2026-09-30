@@ -218,14 +218,15 @@ PT.store = (() => {
     if (!obj || obj.type !== "plan-trainer-rfi-answers") throw new Error("Not an RFI answers file");
     let n = 0;
     for (const a of obj.answers || []) {
-      const r = state.rfis.find((x) => x.id === a.id);
-      if (!r || !a.answer || r.answer === a.answer) continue;
+      for (const r of state.rfis.filter((x) => x.id === a.id || x.copiedFrom === a.id)) {
+      if (!a.answer || r.answer === a.answer) continue;
       const prev = r.status;
       Object.assign(r, { answer: a.answer, answeredBy: a.answeredBy || obj.from || "Instructor", answeredAt: a.answeredAt || nowIso(), status: ["Draft", "Open"].includes(prev) ? "Answered" : prev, updatedAt: nowIso() });
       (r.history = r.history || []).push({ at: a.answeredAt || nowIso(), text: `${r.answeredBy}: answered${prev !== r.status ? ` (${prev} → ${r.status})` : ""}` });
       state.activity.unshift({ id: uid("act"), projectId: r.projectId, at: nowIso(), by: r.answeredBy, text: `Answered RFI-${r.number}: ${r.subject}` });
       state.events.push({ at: nowIso(), projectId: r.projectId, type: "rfi_answer_received", id: r.id });
       n++;
+      }
     }
     emit();
     return n;
@@ -352,7 +353,7 @@ PT.store = (() => {
 
   /* Moving a person's work in and out of a team project.
      Copies get new ids (and new RFI / issue numbers); pins, sheet references and markups follow the sheet NUMBER. */
-  function copyWork(fromPid, toPid, who, move = false) {
+  function copyWork(fromPid, toPid, who, move = false, skip = null) {
     const sheetMap = {};
     const toSheets = state.sheets.filter((s) => s.projectId === toPid);
     for (const s of state.sheets.filter((s) => s.projectId === fromPid)) {
@@ -360,7 +361,7 @@ PT.store = (() => {
       if (t) sheetMap[s.id] = { id: t.id, ver: t.versions[t.current]?.id };
     }
     const ISS = ["issues", "rfis", "reports"];
-    const src = (c) => state[c].filter((r) => r.projectId === fromPid && AUTHOR(c, r) === who && !r.seed);
+    const src = (c) => state[c].filter((r) => r.projectId === fromPid && AUTHOR(c, r) === who && !r.seed && !(skip && skip(r)));
     const picked = { issues: src("issues"), rfis: src("rfis"), reports: src("reports"), docs: src("docs"), markups: src("markups").filter((m) => m.layer === "published") };
     const photoIds = new Set(ISS.flatMap((c) => picked[c].flatMap((r) => r.photoIds || [])));
     picked.photos = state.photos.filter((ph) => ph.projectId === fromPid && (photoIds.has(ph.id) || (AUTHOR("photos", ph) === who && ph.issueId && picked.issues.some((i) => i.id === ph.issueId))));
@@ -370,7 +371,7 @@ PT.store = (() => {
     const now = nowIso(), counts = {};
     for (const c of ["photos", "docs", "issues", "rfis", "reports", "markups"]) for (const r of picked[c]) {
       const x = JSON.parse(JSON.stringify(r));
-      x.id = idMap[r.id]; x.projectId = toPid; x.copiedFrom = r.id; x.updatedAt = now;
+      x.id = idMap[r.id]; x.projectId = toPid; x.copiedFrom = r.copiedFrom || r.id; x.updatedAt = now; // copiedFrom = the very first id (same RFI in the instructor's inbox)
       if (x.sheetId) {
         const m = sheetMap[x.sheetId];
         if (m) { x.sheetId = m.id; if (x.versionId) x.versionId = m.ver; }
@@ -400,28 +401,42 @@ PT.store = (() => {
     const score = (p) => ["issues", "rfis", "reports"].reduce((n, c) => n + state[c].filter((r) => r.projectId === p.id && AUTHOR(c, r) === who && !r.seed).length, 0);
     const from = state.projects.filter((p) => !p.team && p.id !== teamPid).map((p) => ({ p, n: score(p) })).sort((a, b) => b.n - a.n)[0];
     if (!from || !from.n) { emit(); return null; }
+    (state.teamLocal.from ||= {})[teamPid] = from.p.id;
     const counts = copyWork(from.p.id, teamPid, who);
     log(`Brought my work from ${from.p.name} into team ${team.name}`);
     emit();
     return { from: from.p.name, what: describe(counts) };
   }
-  // When you leave (or are removed from) a team: your work moves to a project of your own and is hidden from the team.
+  // When you leave (or are removed from) a team: the work you did IN the team goes back to the project you came from
+  // (what you had before joining is still there). If the team used other plans, it goes to "<team> – my work".
+  // Either way it is hidden from the team.
   function takeMyWork(teamPid) {
     const who = state.user?.name; const team = state.projects.find((p) => p.id === teamPid);
     state.teamLocal ||= { imported: {}, movedOut: {} };
     if (!team?.team || !who || state.teamLocal.movedOut[teamPid]) return null;
-    const mineCount = ["issues", "rfis", "reports", "docs"].reduce((n, c) => n + state[c].filter((r) => r.projectId === teamPid && AUTHOR(c, r) === who).length, 0);
     state.teamLocal.movedOut[teamPid] = nowIso();
-    if (!mineCount) { emit(); return null; }
-    const np = { id: uid("prj"), name: `${team.name} – my work`, number: team.number || "", address: team.address || "", createdAt: nowIso(), leftTeam: teamPid };
-    state.projects.push(np);
-    for (const s of state.sheets.filter((s) => s.projectId === teamPid)) state.sheets.push({ ...JSON.parse(JSON.stringify(s)), id: uid("sht"), projectId: np.id });
-    for (const tm of state.team.filter((x) => x.projectId === teamPid)) state.team.push({ ...tm, id: uid("usr"), projectId: np.id });
-    const counts = copyWork(teamPid, np.id, who, true);
-    if (state.activeProjectId === teamPid) state.activeProjectId = np.id;
-    log(`Moved my work out of team ${team.name} into ${np.name}`);
+    const home = state.projects.find((p) => p.id === state.teamLocal.from?.[teamPid] && !p.team)
+      || state.projects.filter((p) => !p.team && p.id !== teamPid).sort((a, b) => ["issues", "rfis", "reports"].reduce((n, c) => n + state[c].filter((r) => r.projectId === b.id && AUTHOR(c, r) === who).length, 0) - ["issues", "rfis", "reports"].reduce((n, c) => n + state[c].filter((r) => r.projectId === a.id && AUTHOR(c, r) === who).length, 0))[0];
+    // things that were copied in from the home project are still there – don't bring them back twice
+    const homeRoots = new Set(home ? ["issues", "rfis", "reports", "docs", "photos", "markups"].flatMap((c) => state[c].filter((r) => r.projectId === home.id).map((r) => r.copiedFrom || r.id)) : []);
+    const skip = (r) => homeRoots.has(r.copiedFrom || r.id);
+    const moving = ["issues", "rfis", "reports", "docs"].flatMap((c) => state[c].filter((r) => r.projectId === teamPid && AUTHOR(c, r) === who && !skip(r)));
+    if (!moving.length) { if (home && state.activeProjectId === teamPid) state.activeProjectId = home.id; emit(); return home ? { to: home.name, what: "" } : null; }
+    const teamSheetNums = new Set(state.sheets.filter((s) => s.projectId === teamPid).map((s) => s.number));
+    const homeNums = new Set(home ? state.sheets.filter((s) => s.projectId === home.id).map((s) => s.number) : []);
+    const used = new Set(moving.flatMap((r) => [r.sheetId, ...(r.sheetIds || [])]).filter(Boolean).map((id) => state.sheets.find((s) => s.id === id)?.number).filter(Boolean));
+    let target = home && [...used].every((n) => homeNums.has(n)) ? home : null;
+    if (!target) {
+      target = { id: uid("prj"), name: `${team.name} – my work`, number: team.number || "", address: team.address || "", createdAt: nowIso(), leftTeam: teamPid };
+      state.projects.push(target);
+      for (const s of state.sheets.filter((s) => s.projectId === teamPid && teamSheetNums.has(s.number))) state.sheets.push({ ...JSON.parse(JSON.stringify(s)), id: uid("sht"), projectId: target.id });
+      for (const tm of state.team.filter((x) => x.projectId === teamPid)) state.team.push({ ...tm, id: uid("usr"), projectId: target.id });
+    }
+    const counts = copyWork(teamPid, target.id, who, true, skip);
+    if (state.activeProjectId === teamPid) state.activeProjectId = target.id;
+    log(`Moved my team work from ${team.name} into ${target.name}`);
     sigsReady = false; trackChanges(); emit();
-    return { to: np.name, what: describe(counts) };
+    return { to: target.name, what: describe(counts) };
   }
   // Called after any sync / membership change on this device.
   function teamCheck(teamPid) {

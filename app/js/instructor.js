@@ -268,7 +268,7 @@
   // RFIs from the loaded backup files + RFIs that arrived live (Firebase). The newest copy of each RFI wins.
   const inbox = () => {
     const byId = {};
-    const put = (x) => { const o = byId[x.id]; if (!o || String(x.updatedAt || x.createdAt || "") > String(o.updatedAt || o.createdAt || "")) byId[x.id] = x; };
+    const put = (x) => { x = { ...x, id: x.copiedFrom || x.id }; const o = byId[x.id]; if (!o || String(x.updatedAt || x.createdAt || "") > String(o.updatedAt || o.createdAt || "")) byId[x.id] = x; };
     for (const { r } of shown()) for (const x of r.rfis) if (x.status !== "Draft") put({ ...x, who: r.name });
     if (PT.rfiLive) for (const x of PT.rfiLive.rfis()) if (x.status !== "Draft" && (!classFilter || x.classYear === classFilter)) put({ ...x, who: x.from || x.createdBy || "Apprentice", live: true });
     return Object.values(byId);
@@ -297,7 +297,10 @@
     }));
   }
   let inboxRedraw = null, liveTimer = null;
-  function onLive() { clearTimeout(liveTimer); liveTimer = setTimeout(() => { if (inboxRedraw) inboxRedraw(); else if (!document.querySelector(".modal-backdrop")) render(); }, 300); }
+  function onLive(kind) {
+    if (kind === "status") { const st = document.getElementById("liveSt"); if (st) st.textContent = PT.rfiLive.status(); return; }
+    clearTimeout(liveTimer); liveTimer = setTimeout(() => { if (inboxRedraw) inboxRedraw(); else if (!document.querySelector(".modal-backdrop")) render(); }, 300);
+  }
   function openInbox() {
     let filter = "me";
     const draw = (el) => {
