@@ -57,6 +57,17 @@ PT.rfiLive = (() => {
       try {
         const st = store.get(), me = st.user?.name || "";
         if (!me || me === "Apprentice") return;
+        // RFIs the apprentice deleted come out of the instructor's inbox too
+        const pushed = read("pt-rfi-live-roots", {});
+        const roots = new Set((st.rfis || []).map((r) => r.copiedFrom || r.id));
+        const gone = Object.keys(pushed).filter((k) => !roots.has(k));
+        if (gone.length) {
+          const { db, col: c } = await col(); const b = db.batch();
+          for (const k of gone) b.delete(c.doc("rfi__" + k));
+          await b.commit();
+          for (const k of gone) delete pushed[k];
+          write("pt-rfi-live-roots", pushed);
+        }
         const all = (st.rfis || []).filter((r) => toInstructor(r) && (!r.createdBy || r.createdBy === me || r.createdBy === "Apprentice"));
         if (!all.length) return;
         // the same RFI can exist in two projects (copied into / out of a team) – send one: the newest copy
@@ -80,8 +91,8 @@ PT.rfiLive = (() => {
           const b = db.batch();
           for (const { r, data } of out) b.set(c.doc("rfi__" + (r.copiedFrom || r.id)), { coll: "rfi", id: r.copiedFrom || r.id, data, by: me, at: new Date().toISOString() });
           await b.commit();
-          for (const { r, data } of out) sent[r.id] = data.length + ":" + (r.updatedAt || "") + ":" + r.status + ":" + (r.answer || "").length;
-          write("pt-rfi-live-sent", sent);
+          for (const { r, data } of out) { sent[r.id] = data.length + ":" + (r.updatedAt || "") + ":" + r.status + ":" + (r.answer || "").length; pushed[r.copiedFrom || r.id] = 1; }
+          write("pt-rfi-live-sent", sent); write("pt-rfi-live-roots", pushed);
           const fresh = out.filter(({ r }) => !r.liveSentAt);
           if (fresh.length) {
             for (const { r } of fresh) r.liveSentAt = new Date().toISOString();
@@ -115,28 +126,44 @@ PT.rfiLive = (() => {
   }
 
   /* ---------- Instructor Dashboard ---------- */
-  const live = {}, liveAns = {};
+  const live = {}, liveAns = {}, deleted = {};
   let status = cfg() ? "connecting…" : "off";
   function startInstructor(onUpdate) {
     if (!cfg()) return;
     let lastSig = "";
-    const take = (docs) => {
+    const take = (docs, full = false, removed = []) => {
+      if (full) { const here = new Set(docs.map((doc) => doc.data().id + ":" + doc.data().coll)); for (const k of Object.keys(live)) if (!here.has(k + ":rfi")) delete live[k]; }
+      for (const d of removed) if (d.coll === "rfi") delete live[d.id];
       for (const doc of docs) {
         const d = doc.data(); let obj; try { obj = JSON.parse(d.data); } catch { continue; }
-        if (d.coll === "rfi") live[d.id] = obj; else if (d.coll === "answer") liveAns[d.id] = obj;
+        if (d.coll === "rfi") live[d.id] = { ...obj, _at: d.at }; else if (d.coll === "answer") liveAns[d.id] = obj; else if (d.coll === "deleted") deleted[d.id] = obj.at || d.at;
       }
       const sig = Object.values(live).map((x) => x.id + (x.updatedAt || "") + x.status).join("|") + Object.keys(liveAns).length;
       status = "live · checked " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
       if (sig !== lastSig) { lastSig = sig; onUpdate && onUpdate(); } else onUpdate && onUpdate("status");
     };
     col().then(({ col: c, rest }) => {
-      c.onSnapshot((snap) => take(snap.docChanges().map((ch) => ch.doc)), (e) => console.warn("RFI inbox live:", e.message));
+      c.onSnapshot((snap) => { const ch = snap.docChanges(); take(ch.filter((x) => x.type !== "removed").map((x) => x.doc), false, ch.filter((x) => x.type === "removed").map((x) => x.doc.data())); }, (e) => console.warn("RFI inbox live:", e.message));
       // also check every 10 s over plain HTTPS (and when the page comes back into view) in case the network delays live updates
-      const poll = () => rest().then((snap) => take(snap.docs)).catch((e) => { status = "offline (" + e.message + ")"; onUpdate && onUpdate("status"); });
+      const poll = () => rest().then((snap) => take(snap.docs, true)).catch((e) => { status = "offline (" + e.message + ")"; onUpdate && onUpdate("status"); });
       setInterval(poll, 10000); poll();
       document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
     }).catch((e) => { status = "offline (" + e.message + ")"; onUpdate && onUpdate(); });
   }
+  // Instructor deletes RFIs from the inbox: removes them from the cloud and leaves a "deleted" note so a stale copy doesn't come back
+  async function deleteRfis(ids) {
+    const { db, col: c } = await col(); const now = new Date().toISOString();
+    for (let i = 0; i < ids.length; i += 150) {
+      const b = db.batch();
+      for (const id of ids.slice(i, i + 150)) {
+        b.delete(c.doc("rfi__" + id)); b.delete(c.doc("answer__" + id));
+        b.set(c.doc("del__" + id), { coll: "deleted", id, data: JSON.stringify({ id, at: now }), by: "Instructor", at: now });
+      }
+      await b.commit();
+    }
+    for (const id of ids) { delete live[id]; delete liveAns[id]; deleted[id] = now; }
+  }
+  const visible = () => Object.values(live).filter((x) => !deleted[x.id] || String(x._at || "") > String(deleted[x.id]));
   async function sendAnswers(answers) {
     const { db, col: c } = await col();
     for (let i = 0; i < answers.length; i += 300) {
@@ -146,5 +173,5 @@ PT.rfiLive = (() => {
     }
     for (const a of answers) liveAns[a.id] = a;
   }
-  return { startApprentice, startInstructor, sendAnswers, enabled: () => !!cfg(), status: () => status, rfis: () => Object.values(live), sentAnswer: (id) => liveAns[id] };
+  return { startApprentice, startInstructor, sendAnswers, deleteRfis, enabled: () => !!cfg(), status: () => status, rfis: visible, sentAnswer: (id) => liveAns[id] };
 })();

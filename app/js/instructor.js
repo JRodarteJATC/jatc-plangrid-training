@@ -266,12 +266,13 @@
 
   /* ---------- RFI inbox: read apprentice RFIs, answer them, send the answers back ---------- */
   // RFIs from the loaded backup files + RFIs that arrived live (Firebase). The newest copy of each RFI wins.
+  let hiddenRfis = load("pt-rfi-hidden", {}); // RFIs you deleted that came from backup files (can't be removed from the file itself)
   const inbox = () => {
     const byId = {};
     const put = (x) => { x = { ...x, id: x.copiedFrom || x.id }; const o = byId[x.id]; if (!o || String(x.updatedAt || x.createdAt || "") > String(o.updatedAt || o.createdAt || "")) byId[x.id] = x; };
     for (const { r } of shown()) for (const x of r.rfis) if (x.status !== "Draft") put({ ...x, who: r.name });
     if (PT.rfiLive) for (const x of PT.rfiLive.rfis()) if (x.status !== "Draft" && (!classFilter || x.classYear === classFilter)) put({ ...x, who: x.from || x.createdBy || "Apprentice", live: true });
-    return Object.values(byId);
+    return Object.values(byId).filter((x) => !hiddenRfis[x.id]);
   };
   const sentLive = (x) => PT.rfiLive?.sentAnswer(x.id);
   // an answer typed by the apprentice themselves doesn't count – only the instructor's
@@ -281,7 +282,7 @@
     const mine = rfiAnswers[x.id];
     const late = x.dueDate && x.dueDate < today() && !answered(x);
     return `<div class="card rfi-card ${toMe(x) ? "" : "muted-card"}">
-      <div class="row gap" style="justify-content:space-between;flex-wrap:wrap"><b>${esc(who)} – RFI-${String(x.number).padStart(3, "0")}: ${esc(x.subject)}</b>
+      <div class="row gap" style="justify-content:space-between;flex-wrap:wrap"><label class="check" style="margin:0"><input type="checkbox" data-sel="${esc(x.id)}"> <b>${esc(who)} – RFI-${String(x.number).padStart(3, "0")}: ${esc(x.subject)}</b></label>
         <span>${x.live ? '<span class="badge">● live</span> ' : ""}${realAnswer(x) ? '<span class="badge st-Closed">Answered in their app</span>' : sentLive(x) && sentLive(x).answer === mine?.answer ? '<span class="badge st-Closed">Answer sent</span>' : mine?.answer ? '<span class="badge st-InReview">Answer ready to send</span>' : `<span class="badge ${late ? "st-Open" : ""}">${esc(x.status)}${late ? " – OVERDUE" : ""}</span>`}</span></div>
       <p class="small muted">To: <b>${esc(x.assignedTo || "—")}</b> · Sent ${fmtDate(x.sentDate || x.createdAt)} · Due ${fmtDate(x.dueDate) || "—"} · Sheets: ${esc(x.sheets || "—")} (${x.published} published markup${x.published === 1 ? "" : "s"}) · Cost impact: ${esc(x.costImpact)} · Schedule impact: ${esc(x.scheduleImpact)}${x.project ? ` · Project: ${esc(x.project)}` : ""}</p>
       <p><b>Question:</b><br>${esc(x.question).replace(/\n/g, "<br>")}</p>
@@ -309,6 +310,10 @@
       const list = inbox().filter((x) => filter === "all" || toMe(x)).sort((a, b) => answered(a) - answered(b) || String(a.dueDate || "9").localeCompare(String(b.dueDate || "9")));
       $("#inboxList", el).innerHTML = list.map((x) => rfiCard(x.who, x)).join("") || `<p class="muted">No RFIs ${filter === "me" ? "sent to you" : ""} in the loaded files.</p>`;
       wireAnswers(el);
+      const sel = () => $$("input[data-sel]:checked", el).map((c) => c.dataset.sel);
+      const upd = () => { const n = sel().length; $("#delSel", el).disabled = !n; $("#delSel", el).textContent = n ? `🗑 Delete selected (${n})` : "🗑 Delete selected"; };
+      $$("input[data-sel]", el).forEach((c) => (c.onchange = upd));
+      $("#selAll", el).checked = false; upd();
     };
     const { el } = modal({
       title: "RFI inbox", wide: true, cancelLabel: "Close",
@@ -318,11 +323,32 @@
         <b>RFIs → Import instructor answers</b> and only <i>their</i> RFIs are updated to <b>Answered</b>.</p>
         <div class="row gap"><label class="inline">Answered by <input id="myName" value="${esc(myName)}" style="width:12em"></label>
         <label class="inline"><select id="inFilter"><option value="me">Sent to me</option><option value="all">All sent RFIs</option></select></label></div>
+        <div class="row gap" style="margin:8px 0"><label class="check" style="margin:0"><input type="checkbox" id="selAll"> Select all shown</label>
+          <button type="button" class="btn btn-sm btn-danger" id="delSel" disabled>🗑 Delete selected</button>
+          <span class="muted small">Removes them from your inbox (test RFIs, duplicates, old classes). It doesn't change the apprentices' own apps.</span></div>
         <div id="inboxList"></div>`,
     });
     $("#myName", el).onchange = (e) => { myName = e.target.value.trim() || "Juan Rodarte"; save("pt-instructor-name", myName); };
     $("#inFilter", el).onchange = (e) => { filter = e.target.value; draw(el); };
     $("#dlAns", el).onclick = () => downloadAnswers();
+    $("#selAll", el).onchange = (e) => { $$("input[data-sel]", el).forEach((c) => (c.checked = e.target.checked)); $$("input[data-sel]", el)[0]?.onchange?.(); };
+    $("#delSel", el).onclick = () => {
+      const ids = $$("input[data-sel]:checked", el).map((c) => c.dataset.sel);
+      if (!ids.length) return;
+      const bar = $("#delSel", el).closest(".row");
+      bar.insertAdjacentHTML("afterend", `<div class="card" id="delConfirm" style="border-color:#c0392b"><b>Delete ${ids.length} RFI${ids.length === 1 ? "" : "s"} from your inbox?</b> This can't be undone.
+        <div class="row gap" style="margin-top:6px"><button type="button" class="btn btn-danger" id="delYes">Yes, delete</button><button type="button" class="btn" id="delNo">Cancel</button></div></div>`);
+      $("#delNo", el).onclick = () => $("#delConfirm", el).remove();
+      $("#delYes", el).onclick = async () => {
+        const liveIds = new Set((PT.rfiLive?.rfis() || []).map((x) => x.id));
+        const cloud = ids.filter((id) => liveIds.has(id));
+        for (const id of ids) { hiddenRfis[id] = new Date().toISOString(); delete rfiAnswers[id]; }
+        save("pt-rfi-hidden", hiddenRfis); save(ANS_KEY, rfiAnswers);
+        try { if (cloud.length) await PT.rfiLive.deleteRfis(cloud); toast(`Deleted ${ids.length} RFI${ids.length === 1 ? "" : "s"}`, "ok"); }
+        catch (e) { toast("Hidden here, but couldn't remove them from the cloud (" + e.message + ")", "warn"); }
+        $("#delConfirm", el)?.remove(); draw(el);
+      };
+    };
     $("#sendAns", el) && ($("#sendAns", el).onclick = async () => {
       const answers = Object.entries(rfiAnswers).filter(([id, a]) => a.answer && sentLive({ id })?.answer !== a.answer).map(([id, a]) => ({ id, answer: a.answer, answeredBy: a.by || myName, answeredAt: a.at }));
       if (!answers.length) return toast(Object.keys(rfiAnswers).length ? "All your answers were already sent" : "Type at least one answer first", "warn");

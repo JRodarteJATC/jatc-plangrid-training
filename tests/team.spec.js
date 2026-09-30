@@ -199,7 +199,7 @@ const FAKE_FIREBASE = `
       return () => clearInterval(iv);
     },
   });
-  const db = { settings() {}, collection: (c) => col(c), batch() { const ops = []; return { set: (ref, obj) => ops.push([ref._path, obj]), commit: () => window.__relaySet(ops) }; } };
+  const db = { settings() {}, collection: (c) => col(c), batch() { const ops = []; return { set: (ref, obj) => ops.push([ref._path, obj]), delete: (ref) => ops.push([ref._path, null]), commit: () => window.__relaySet(ops) }; } };
   const app = { auth: () => ({ signInAnonymously: async () => ({}) }), firestore: () => db };
   window.firebase = { apps: [], initializeApp: () => { window.firebase.apps.push(app); return app; }, app: () => app };
 })();`;
@@ -209,7 +209,7 @@ test("live sync: a teammate's change shows up by itself", async ({ browser }) =>
   const mk = async () => {
     const ctx = await browser.newContext({ acceptDownloads: true });
     await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/")).map(([k, v]) => [k, v])));
-    await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) cloud[k] = v; });
+    await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) { if (v === null) delete cloud[k]; else cloud[k] = v; } });
     await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake' };" }));
     await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
     return ctx.newPage();
@@ -236,7 +236,7 @@ test("RFIs sent to the instructor arrive in the dashboard inbox live, and answer
   const mk = async () => {
     const ctx = await browser.newContext({ acceptDownloads: true });
     await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/"))));
-    await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) cloud[k] = v; });
+    await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) { if (v === null) delete cloud[k]; else cloud[k] = v; } });
     await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
     await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
     return ctx.newPage();
@@ -258,5 +258,23 @@ test("RFIs sent to the instructor arrive in the dashboard inbox live, and answer
   await expect(T.locator(".modal")).toContainText("Answer sent");
   // the apprentice gets the answer by itself
   await expect.poll(() => S(A, () => { const r = PT.store.list("rfis").find((x) => x.subject.startsWith("Curb")); return r.status + "|" + r.answer; }), { timeout: 10000 }).toBe("Answered|Yes – raise the curb to 14 in. per 4/A501.");
+
+  // bulk delete in the apprentice app: select two RFIs, delete – the one sent to the instructor leaves the cloud inbox
+  await S(A, () => PT.store.add("rfis", { number: PT.store.nextNumber("rfis"), subject: "Second RFI", question: "q2", assignedTo: "Juan Rodarte", status: "Open", sheetIds: [], createdBy: "Luis Herrera" }));
+  await expect.poll(() => Object.keys(cloud).filter((k) => k.includes("rfi__")).length, { timeout: 10000 }).toBe(2);
+  await A.goto("/#/rfis");
+  const idOf = (s) => S(A, (s) => PT.store.list("rfis").find((r) => r.subject === s).id, s);
+  await A.check(`input[data-sel="${await idOf("Second RFI")}"]`); await A.check(`input[data-sel="${await idOf("Draft not sent")}"]`);
+  await expect(A.locator("#delSel")).toContainText("Delete selected (2)");
+  await A.click("#delSel"); await A.click(".modal button[type=submit]");
+  expect(await S(A, () => PT.store.list("rfis").map((r) => r.subject).filter((s) => /Second|Draft not/.test(s)))).toEqual([]);
+  await expect.poll(() => Object.keys(cloud).filter((k) => k.includes("rfi__")).length, { timeout: 10000 }).toBe(1);
+
+  // bulk delete in the instructor's inbox
+  await T.reload(); await T.click("#inboxBtn"); await T.selectOption("#inFilter", "all");
+  await T.check("#selAll"); await T.click("#delSel"); await T.click("#delYes");
+  await expect(T.locator(".rfi-card")).toHaveCount(0);
+  await expect.poll(() => Object.keys(cloud).filter((k) => k.includes("rfi__")).length).toBe(0);
+  expect(Object.keys(cloud).some((k) => k.includes("del__"))).toBe(true);
   expect(errs).toEqual([]);
 });

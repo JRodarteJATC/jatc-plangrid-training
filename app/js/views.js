@@ -337,13 +337,25 @@ PT.views = (() => {
 
   /* ============ RFIs ============ */
   function rfis(root) {
-    root.innerHTML = header("RFIs – Requests for Information", `<button class="btn" id="ansBtn" title="Open the RFI answers file your instructor sent">⤒ Import instructor answers</button><button class="btn" id="csvBtn">⤓ Export CSV</button><button class="btn btn-primary" id="newBtn">+ New RFI</button>`) +
+    root.innerHTML = header("RFIs – Requests for Information", `<button class="btn btn-danger" id="delSel" hidden>🗑 Delete selected</button><button class="btn" id="ansBtn" title="Open the RFI answers file your instructor sent">⤒ Import instructor answers</button><button class="btn" id="csvBtn">⤓ Export CSV</button><button class="btn btn-primary" id="newBtn">+ New RFI</button>`) +
       `<p class="muted">Workflow: <b>Draft</b> → <b>Open</b> (sent, ball in court with the reviewer) → <b>Answered</b> → <b>Closed</b> (answer distributed to the field).</p><div id="tbl"></div>`;
     const list = store.list("rfis").sort((a, b) => b.number - a.number);
-    $("#tbl", root).innerHTML = list.length ? `<table class="tbl click"><thead><tr><th>RFI #</th><th>Subject</th><th>Status</th><th>Ball in court</th><th>Sent</th><th>Due</th><th>Cost?</th><th>Schedule?</th><th>Sheets</th></tr></thead><tbody>
-      ${list.map((r) => `<tr data-id="${r.id}"><td>RFI-${String(r.number).padStart(3, "0")}</td><td>${esc(r.subject)}</td><td>${statusBadge(r.status)}</td><td>${esc(r.status === "Answered" ? r.createdBy : r.assignedTo || "")}</td><td>${fmtDate(r.sentDate)}</td><td class="${overdue(r.dueDate, r.status) ? "warn-text" : ""}">${fmtDate(r.dueDate)}</td><td>${esc(r.costImpact)}</td><td>${esc(r.scheduleImpact)}</td><td>${(r.sheetIds || []).map((id) => store.find("sheets", id)?.number).filter(Boolean).join(", ")}</td></tr>`).join("")}
+    $("#tbl", root).innerHTML = list.length ? `<table class="tbl click"><thead><tr><th style="width:34px"><input type="checkbox" id="selAll" title="Select all" aria-label="Select all"></th><th>RFI #</th><th>Subject</th><th>Status</th><th>Ball in court</th><th>Sent</th><th>Due</th><th>Cost?</th><th>Schedule?</th><th>Sheets</th></tr></thead><tbody>
+      ${list.map((r) => `<tr data-id="${r.id}"><td class="selcell"><input type="checkbox" data-sel="${r.id}" aria-label="Select RFI-${r.number}"></td><td>RFI-${String(r.number).padStart(3, "0")}</td><td>${esc(r.subject)}</td><td>${statusBadge(r.status)}</td><td>${esc(r.status === "Answered" ? r.createdBy : r.assignedTo || "")}</td><td>${fmtDate(r.sentDate)}</td><td class="${overdue(r.dueDate, r.status) ? "warn-text" : ""}">${fmtDate(r.dueDate)}</td><td>${esc(r.costImpact)}</td><td>${esc(r.scheduleImpact)}</td><td>${(r.sheetIds || []).map((id) => store.find("sheets", id)?.number).filter(Boolean).join(", ")}</td></tr>`).join("")}
       </tbody></table>` : `<p class="muted">No RFIs yet.</p>`;
-    $$("tr[data-id]", root).forEach((tr) => (tr.onclick = () => rfiForm(store.find("rfis", tr.dataset.id))));
+    $$("tr[data-id]", root).forEach((tr) => (tr.onclick = (e) => { if (e.target.closest(".selcell")) return; rfiForm(store.find("rfis", tr.dataset.id)); }));
+    // bulk delete
+    const picked = () => $$("input[data-sel]:checked", root).map((c) => c.dataset.sel);
+    const upd = () => { const n = picked().length; const b = $("#delSel", root); b.hidden = !n; b.textContent = `🗑 Delete selected (${n})`; };
+    $$("input[data-sel]", root).forEach((c) => (c.onchange = upd));
+    $("#selAll", root) && ($("#selAll", root).onchange = (e) => { $$("input[data-sel]", root).forEach((c) => (c.checked = e.target.checked)); upd(); });
+    $("#delSel", root).onclick = () => {
+      const ids = picked(); if (!ids.length) return;
+      U.confirmBox(`Delete ${ids.length} RFI${ids.length === 1 ? "" : "s"}? This can't be undone. RFIs you sent to your instructor are removed from their inbox too.`, () => {
+        for (const id of ids) { const r = store.find("rfis", id); if (r) store.remove("rfis", id); }
+        store.log(`Deleted ${ids.length} RFI${ids.length === 1 ? "" : "s"}`); toast(`Deleted ${ids.length} RFI${ids.length === 1 ? "" : "s"}`, "ok"); route();
+      }, "Delete");
+    };
     $("#newBtn", root).onclick = () => rfiForm(null);
     $("#ansBtn", root).onclick = importAnswers;
     $("#csvBtn", root).onclick = () => { download(`rfis-${today()}.csv`, toCSV(list.map((r) => ({ Number: r.number, Subject: r.subject, Status: r.status, AssignedTo: r.assignedTo, Sent: r.sentDate || "", Due: r.dueDate, Question: r.question, Answer: r.answer || "" }))), "text/csv"); store.event("export", { what: "rfi_csv" }); };
