@@ -124,6 +124,56 @@ test("remove a teammate, leave a team, and add someone back – survives syncing
   expect(errs).toEqual([]);
 });
 
+test("joining brings your earlier work into the team; leaving takes it out and hides it", async ({ browser }) => {
+  const mk = async () => (await browser.newContext({ acceptDownloads: true })).newPage();
+  const A = await mk(), B = await mk();
+  const errs = []; for (const p of [A, B]) p.on("pageerror", (e) => errs.push(e.message));
+  await fresh(A, "Mateo Ramirez"); await fresh(B, "Luis Herrera");
+  // Luis worked in the sample project before joining: a pinned task with a photo, an RFI on R-101, a punch item, a daily report
+  await S(B, () => {
+    const me = "Luis Herrera", r101 = PT.store.list("sheets").find((s) => s.number === "R-101").id;
+    const ph = PT.store.add("photos", { dataUrl: "data:image/png;base64,iVBORw0KGgo=", caption: "curb", by: me });
+    PT.store.add("issues", { type: "Task", number: PT.store.nextNumber("issues"), title: "Luis task", status: "Open", createdBy: me, sheetId: r101, x: 100, y: 100, photoIds: [ph.id], comments: [] });
+    PT.store.add("issues", { type: "Punch", number: PT.store.nextNumber("issues"), title: "Luis punch", status: "Open", createdBy: me, photoIds: [], comments: [] });
+    PT.store.add("rfis", { number: PT.store.nextNumber("rfis"), subject: "Luis RFI", question: "q", status: "Open", createdBy: me, sheetIds: [r101] });
+    PT.store.add("reports", { type: "Daily Report", date: "2026-10-05", status: "Submitted", createdBy: me, workPerformed: "Luis daily", crew: [] });
+  });
+  const before = await S(B, () => PT.store.list("issues").length);
+  await A.goto("/#/teamproject"); await A.click("#startBtn"); await A.fill(".modal input[name=name]", "Team 3");
+  await A.check(".modal input[name=m][value='Luis Herrera']"); await A.click(".modal button[type=submit]");
+  await S(A, () => PT.store.add("rfis", { number: PT.store.nextNumber("rfis"), subject: "Mateo RFI", question: "q", status: "Open", createdBy: "Mateo Ramirez", sheetIds: [] }));
+  await syncFiles(B, [await sendTeamFile(A)]);
+  // B now sees his earlier work in the team project, pinned on the team's R-101, with the photo
+  const got = await S(B, () => {
+    const L = PT.store.list, r101 = L("sheets").find((s) => s.number === "R-101").id, task = L("issues").find((i) => i.title === "Luis task");
+    return { proj: PT.store.project().name, titles: L("issues").filter((i) => /Luis/.test(i.title)).map((i) => i.title).sort(), rfis: L("rfis").map((r) => r.subject).sort(),
+      daily: L("reports").some((r) => r.workPerformed === "Luis daily"), pinned: task.sheetId === r101, photo: task.photoIds.length === 1 && !!PT.store.find("photos", task.photoIds[0]),
+      rfiSheet: L("rfis").find((r) => r.subject === "Luis RFI").sheetIds[0] === r101 };
+  });
+  expect(got).toEqual({ proj: "Team 3", titles: ["Luis punch", "Luis task"], rfis: ["Luis RFI", "Mateo RFI"], daily: true, pinned: true, photo: true, rfiSheet: true });
+  // his original sample project still has it (labs are graded there)
+  expect(await S(B, () => { const p = PT.store.get().projects.find((x) => !x.team); return PT.store.get().issues.filter((i) => i.projectId === p.id && /Luis/.test(i.title)).length; })).toBe(2);
+  for (const h of ["#/issues", "#/rfis", "#/punch", "#/reports"]) { await B.goto("/" + h); await expect(B.locator("#main")).toContainText("Luis"); }
+  // A gets Luis's work
+  await syncFiles(A, [await sendTeamFile(B)]);
+  expect(await S(A, () => PT.store.list("rfis").map((r) => r.subject).sort())).toEqual(["Luis RFI", "Mateo RFI"]);
+  // Luis leaves: his work moves to his own project, and after A syncs it is hidden from the team
+  await B.goto("/#/teamproject"); await B.click("[data-leave]"); await B.click(".modal button.btn-primary");
+  const mine = await S(B, () => ({ proj: PT.store.project().name, rfis: PT.store.list("rfis").map((r) => r.subject), teamHasLuis: PT.store.get().rfis.some((r) => r.subject === "Luis RFI" && PT.store.get().projects.find((p) => p.id === r.projectId)?.team) }));
+  expect(mine).toEqual({ proj: "Team 3 – my work", rfis: ["Luis RFI"], teamHasLuis: false });
+  await syncFiles(A, [await sendTeamFile(B)]);
+  expect(await S(A, () => PT.store.list("rfis").map((r) => r.subject))).toEqual(["Mateo RFI"]);
+  expect(await S(A, () => PT.store.list("issues").some((i) => /Luis/.test(i.title)))).toBe(false);
+  for (const h of ["#/issues", "#/rfis", "#/punch", "#/reports"]) { await A.goto("/" + h); await A.waitForTimeout(200); const tx = await A.locator("#main").textContent(); for (const w of ["Luis task", "Luis punch", "Luis RFI", "Luis daily"]) expect(tx).not.toContain(w); }
+  // dashboard: Luis is graded on his own project, Mateo's team score doesn't include Luis's work
+  const bA = Buffer.from(await S(A, () => PT.store.exportJSON())), bB = Buffer.from(await S(B, () => PT.store.exportJSON()));
+  await A.goto("/instructor.html"); const ch = A.waitForEvent("filechooser"); await A.click("#pickBtn");
+  await (await ch).setFiles([{ name: "a.json", mimeType: "application/json", buffer: bA }, { name: "b.json", mimeType: "application/json", buffer: bB }]);
+  await A.click("[data-stu='luis herrera']");
+  await expect(A.locator(".modal")).toContainText("my work");
+  expect(errs).toEqual([]);
+});
+
 // ---------- live sync against a fake Firebase (shared between both browser contexts through Node) ----------
 const FAKE_FIREBASE = `
 (() => {

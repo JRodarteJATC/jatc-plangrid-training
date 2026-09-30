@@ -25,6 +25,13 @@ PT.team = (() => {
     download(name, JSON.stringify(sh), "application/json");
     toast("Team file saved – send it to your teammates (AirDrop, e-mail, shared drive…)", "ok");
   }
+  function afterTeamChange(pid) {
+    const r = store.teamCheck(pid); if (!r) return r;
+    if (r.joined && r.what) toast(`Brought your work into the team from “${r.from}”: ${r.what}`, "ok");
+    if (r.left && r.what) toast(`You're off the team – your work (${r.what}) moved to your own project “${r.to}”`, "ok");
+    PT.app.renderChrome && PT.app.renderChrome();
+    return r;
+  }
   function mergeTexts(texts) {
     let tot = { added: 0, updated: 0, removed: 0 }, pid = null, n = 0;
     for (const t of texts) {
@@ -43,6 +50,7 @@ PT.team = (() => {
     }
     if (pid) store.get().activeProjectId = pid;
     store.emit();
+    if (pid) afterTeamChange(pid);
     toast(`Synced ${n} team file${n === 1 ? "" : "s"}: ${tot.added} new, ${tot.updated} updated, ${tot.removed} removed`, "ok");
     return tot;
   }
@@ -72,6 +80,7 @@ PT.team = (() => {
         if (members.length + 1 > MAX) { toast(`A team is 2–${MAX} people`, "warn"); return false; }
         const p = store.newTeamProject({ name: f.name.trim(), members, withSamples: f.src === "samples" });
         p.team.code = code(); p.updatedAt = new Date().toISOString(); store.emit();
+        afterTeamChange(p.id);
         toast("Team project started – now send your team file to your teammates", "ok");
         PT.app.renderChrome(); location.hash = "#/teamproject"; PT.app.route();
       },
@@ -95,8 +104,8 @@ PT.team = (() => {
     $$("[data-sync]", root).forEach((b) => (b.onclick = pickFiles));
     $$("[data-live]", root).forEach((b) => (b.onclick = () => live.toggle(b.dataset.live).then(() => page(root))));
     const proj = (id) => store.get().projects.find((x) => x.id === id);
-    $$("[data-rm]", root).forEach((b) => (b.onclick = () => PT.util.confirmBox(`Remove ${b.dataset.rm} from ${proj(b.dataset.p).name}? Their work stays in the project but no longer counts for the team. Send your team file (or keep live sync on) so everyone gets the change.`, () => { store.setTeamMember(b.dataset.p, b.dataset.rm, false); toast(`${b.dataset.rm} removed – send your team file so teammates get the change`, "ok"); page(root); }, "Remove")));
-    $$("[data-leave]", root).forEach((b) => (b.onclick = () => PT.util.confirmBox(`Leave ${proj(b.dataset.leave).name}? Your own work stays in this project and is graded on its own – it no longer counts for the team. Then send your team file once so your teammates see that you left.`, () => { store.setTeamMember(b.dataset.leave, me(), false); toast("You left the team – send your team file once so teammates see it", "ok"); page(root); }, "Leave team")));
+    $$("[data-rm]", root).forEach((b) => (b.onclick = () => PT.util.confirmBox(`Remove ${b.dataset.rm} from ${proj(b.dataset.p).name}? Their work is hidden from the team and no longer counts for it (it moves to their own project on their device). Send your team file (or keep live sync on) so everyone gets the change.`, () => { store.setTeamMember(b.dataset.p, b.dataset.rm, false); toast(`${b.dataset.rm} removed – send your team file so teammates get the change`, "ok"); page(root); }, "Remove")));
+    $$("[data-leave]", root).forEach((b) => (b.onclick = () => PT.util.confirmBox(`Leave ${proj(b.dataset.leave).name}? Your tasks, RFIs, punch items and daily reports move to a project of your own and are graded on their own – they no longer show or count for the team. Then send your team file once so your teammates see that you left.`, () => { const pid = b.dataset.leave; store.setTeamMember(pid, me(), false); if (!afterTeamChange(pid)?.what) toast("You left the team", "ok"); toast("Send your team file once so your teammates see that you left", "ok"); page(root); }, "Leave team")));
     $$("[data-add]", root).forEach((b) => (b.onclick = () => {
       const p = proj(b.dataset.add), roster = (PT.roster?.APPRENTICES || []).map((a) => a.name).filter((n) => !p.team.members.includes(n));
       modal({ title: `Add a teammate to ${p.name}`, body: `<label>Teammate <select name="n"><option value="">— pick —</option>${roster.map((n) => `<option>${esc(n)}</option>`).join("")}</select></label><label>…or type a name <input name="other" placeholder="First Last"></label>`,
@@ -127,7 +136,7 @@ PT.team = (() => {
         <td>${!inTeam ? "" : n === me() ? `<button class="btn btn-sm" data-leave="${p.id}">Leave team</button>` : `<button class="btn btn-sm" data-rm="${esc(n)}" data-p="${p.id}">Remove</button>`}</td></tr>`; }).join("")}
       ${gone.map(([n, e]) => `<tr class="muted"><td><s>${esc(n)}</s></td><td colspan="7" class="small">${e.by === n ? "left the team" : "removed by " + esc(e.by || "a teammate")} ${fmtDateTime(e.at)}</td></tr>`).join("")}
       </tbody></table>
-      ${!inTeam ? `<p class="badge st-Open" style="display:block;white-space:normal">You are no longer on this team${myOut?.by && myOut.by !== me() ? ` (removed by ${esc(myOut.by)})` : ""}. Your own work stays in this project and is graded on its own. ${myOut?.by === me() ? "Send your team file once (or keep live sync on) so your teammates see that you left." : "Ask a teammate to add you back if this was a mistake."}</p>` :
+      ${!inTeam ? `<p class="badge st-Open" style="display:block;white-space:normal">You are no longer on this team${myOut?.by && myOut.by !== me() ? ` (removed by ${esc(myOut.by)})` : ""}. Your own work is in your project “${esc(p.name)} – my work” and is graded on its own. ${myOut?.by === me() ? "Send your team file once (or keep live sync on) so your teammates see that you left." : "Ask a teammate to add you back if this was a mistake."}</p>` :
         t.members.length < MAX ? `<p><button class="btn btn-sm" data-add="${p.id}">+ Add a teammate</button></p>` : ""}
       <h3>Who does what</h3>
       <div class="form-grid">${SECTIONS.map(([k, l]) => `<label>${esc(l)} <select data-sec="${k}" data-p="${p.id}"><option value="">— anyone —</option>${t.members.map((n) => `<option ${t.sections?.[k] === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></label>`).join("")}</div>
@@ -188,6 +197,7 @@ PT.team = (() => {
         else (share.records[d.coll] ||= []).push(obj);
       }
       const s = store.mergeTeam(store.get(), share);
+      afterTeamChange(pid);
       if (s.added + s.updated + s.removed) conns[pid].status = "· updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     }
     async function connect(pid) {

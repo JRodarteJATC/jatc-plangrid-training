@@ -17,6 +17,8 @@ Your instructor may let you do the project as a team – each person takes secti
 1. **One person** opens **Team Project → + Start a team project**, picks the teammates and **Sample drawings**
    (or blank to upload real plans), then taps **⤓ Send my team file** and sends it (AirDrop, e-mail, shared drive).
 2. **Everyone else:** **Team Project → ⤒ Join / sync with team files** → choose that file.
+   Any tasks, punch items, RFIs, daily reports and documents you already made in your own project are **copied into the
+   team** automatically (your original project keeps its copy).
 3. Use **Who does what** to split the sections (e.g. one person daily reports + time sheets, one tasks, one RFIs + documents).
 4. To combine work: everyone taps **⤓ Send my team file**, then **⤒ Sync** with the files from the others. Do it as often
    as you like, in any order. Deleted items stay deleted; if two people made "RFI-001", one becomes RFI-002.
@@ -28,8 +30,9 @@ Your instructor may let you do the project as a team – each person takes secti
 - **Remove** someone → tap **Remove** next to their name. **Leave** the team yourself → tap **Leave team** next to your name.
 - **+ Add a teammate** adds someone new (or brings back someone who was removed).
 - Then **⤓ Send my team file** so everyone gets the change (with live sync on, it shows up by itself).
-- The person who left or was removed keeps their own work in the project and is graded **on their own**;
-  their work no longer counts for the team. Syncing an old team file does not put them back on the team.
+- The person who left or was removed: their tasks, punch items, RFIs, daily reports and documents **move to a project of
+  their own** (“<team name> – my work”) and are graded **on their own**. Their work is **hidden from the team** and no
+  longer counts for it. Syncing an old team file does not put them back on the team.
 
 ---
 

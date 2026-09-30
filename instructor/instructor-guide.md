@@ -122,8 +122,10 @@ adjust anyone who didn't contribute with an override.
 
 **Changing a team:** you don't edit teams in the dashboard – any member does it on the **Team Project** page:
 **Remove** next to a name, **Leave team** next to their own name, or **+ Add a teammate**, then they send their
-team file (or live sync carries it). The latest change wins, even if someone syncs an old file later. A person who
-left or was removed is graded on **their own** work only; the team's score no longer includes their work.
+team file (or live sync carries it). The latest change wins, even if someone syncs an old file later. When someone
+joins, their earlier tasks, punch items, RFIs and daily reports are copied into the team. A person who left or was
+removed has their work moved to their own project (“<team> – my work”) and hidden from the team; they are graded on
+**their own** work only and the team's score no longer includes it.
 
 **Answering their RFIs (RFI inbox):**
 1. Drop the apprentices' backup files into the Instructor Dashboard.

@@ -133,7 +133,20 @@ PT.store = (() => {
   const get = () => state;
   const pid = () => state.activeProjectId;
   const project = () => state.projects.find((p) => p.id === pid());
-  const list = (coll) => state[coll].filter((r) => r.projectId === pid());
+  // In a team project, work by people who left or were removed is kept (for history) but not shown.
+  const AUTHOR = (c, r) => (c === "photos" ? r.by : c === "docs" ? r.uploadedBy : r.createdBy);
+  const WORK_COLLS = ["issues", "rfis", "reports", "markups", "photos", "docs"];
+  function goneFrom(p) {
+    const log = p?.team?.memberLog; if (!log) return null;
+    const out = new Set(Object.entries(log).filter(([n, e]) => !e.in && !(p.team.members || []).includes(n)).map(([n]) => n));
+    return out.size ? out : null;
+  }
+  const list = (coll) => {
+    const id = pid(), arr = state[coll].filter((r) => r.projectId === id);
+    if (!WORK_COLLS.includes(coll)) return arr;
+    const gone = goneFrom(state.projects.find((p) => p.id === id));
+    return gone ? arr.filter((r) => !gone.has(AUTHOR(coll, r))) : arr;
+  };
   const find = (coll, id) => state[coll].find((r) => r.id === id);
 
   function emit() { if (!readOnly) trackChanges(); persist(); listeners.forEach((fn) => { try { fn(state); } catch (e) { console.error(e); } }); }
@@ -337,6 +350,92 @@ PT.store = (() => {
     emit();
   }
 
+  /* Moving a person's work in and out of a team project.
+     Copies get new ids (and new RFI / issue numbers); pins, sheet references and markups follow the sheet NUMBER. */
+  function copyWork(fromPid, toPid, who, move = false) {
+    const sheetMap = {};
+    const toSheets = state.sheets.filter((s) => s.projectId === toPid);
+    for (const s of state.sheets.filter((s) => s.projectId === fromPid)) {
+      const t = toSheets.find((x) => x.number === s.number);
+      if (t) sheetMap[s.id] = { id: t.id, ver: t.versions[t.current]?.id };
+    }
+    const ISS = ["issues", "rfis", "reports"];
+    const src = (c) => state[c].filter((r) => r.projectId === fromPid && AUTHOR(c, r) === who && !r.seed);
+    const picked = { issues: src("issues"), rfis: src("rfis"), reports: src("reports"), docs: src("docs"), markups: src("markups").filter((m) => m.layer === "published") };
+    const photoIds = new Set(ISS.flatMap((c) => picked[c].flatMap((r) => r.photoIds || [])));
+    picked.photos = state.photos.filter((ph) => ph.projectId === fromPid && (photoIds.has(ph.id) || (AUTHOR("photos", ph) === who && ph.issueId && picked.issues.some((i) => i.id === ph.issueId))));
+    const idMap = {};
+    for (const [c, rs] of Object.entries(picked)) for (const r of rs) idMap[r.id] = uid(c.slice(0, 3));
+    const nextNum = (c) => state[c].filter((r) => r.projectId === toPid).reduce((m, r) => Math.max(m, +r.number || 0), 0) + 1;
+    const now = nowIso(), counts = {};
+    for (const c of ["photos", "docs", "issues", "rfis", "reports", "markups"]) for (const r of picked[c]) {
+      const x = JSON.parse(JSON.stringify(r));
+      x.id = idMap[r.id]; x.projectId = toPid; x.copiedFrom = r.id; x.updatedAt = now;
+      if (x.sheetId) {
+        const m = sheetMap[x.sheetId];
+        if (m) { x.sheetId = m.id; if (x.versionId) x.versionId = m.ver; }
+        else if (c === "markups") continue;
+        else { x.sheetId = null; x.x = null; x.y = null; }
+      }
+      if (Array.isArray(x.sheetIds)) x.sheetIds = x.sheetIds.map((id) => sheetMap[id]?.id).filter(Boolean);
+      if (Array.isArray(x.photoIds)) x.photoIds = x.photoIds.map((id) => idMap[id]).filter(Boolean);
+      if (x.issueId) x.issueId = idMap[x.issueId] || null;
+      if (c === "issues" || c === "rfis") x.number = nextNum(c);
+      state[c].push(x); counts[c] = (counts[c] || 0) + 1;
+    }
+    if (move) for (const [c, rs] of Object.entries(picked)) { const ids = new Set(rs.map((r) => r.id)); state[c] = state[c].filter((r) => !ids.has(r.id)); }
+    return counts;
+  }
+  const describe = (k) => {
+    const parts = [["issues", "issue/task/punch item"], ["rfis", "RFI"], ["reports", "report"], ["docs", "document"], ["photos", "photo"]]
+      .filter(([c]) => k[c]).map(([c, w]) => `${k[c]} ${w}${k[c] > 1 ? "s" : ""}`);
+    return parts.join(", ");
+  };
+  // When you join (or start) a team: copy your work from your own project into the team, once.
+  function importMyWork(teamPid) {
+    const who = state.user?.name; const team = state.projects.find((p) => p.id === teamPid);
+    state.teamLocal ||= { imported: {}, movedOut: {} };
+    if (!team?.team || !who || state.teamLocal.imported[teamPid]) return null;
+    state.teamLocal.imported[teamPid] = nowIso();
+    const score = (p) => ["issues", "rfis", "reports"].reduce((n, c) => n + state[c].filter((r) => r.projectId === p.id && AUTHOR(c, r) === who && !r.seed).length, 0);
+    const from = state.projects.filter((p) => !p.team && p.id !== teamPid).map((p) => ({ p, n: score(p) })).sort((a, b) => b.n - a.n)[0];
+    if (!from || !from.n) { emit(); return null; }
+    const counts = copyWork(from.p.id, teamPid, who);
+    log(`Brought my work from ${from.p.name} into team ${team.name}`);
+    emit();
+    return { from: from.p.name, what: describe(counts) };
+  }
+  // When you leave (or are removed from) a team: your work moves to a project of your own and is hidden from the team.
+  function takeMyWork(teamPid) {
+    const who = state.user?.name; const team = state.projects.find((p) => p.id === teamPid);
+    state.teamLocal ||= { imported: {}, movedOut: {} };
+    if (!team?.team || !who || state.teamLocal.movedOut[teamPid]) return null;
+    const mineCount = ["issues", "rfis", "reports", "docs"].reduce((n, c) => n + state[c].filter((r) => r.projectId === teamPid && AUTHOR(c, r) === who).length, 0);
+    state.teamLocal.movedOut[teamPid] = nowIso();
+    if (!mineCount) { emit(); return null; }
+    const np = { id: uid("prj"), name: `${team.name} – my work`, number: team.number || "", address: team.address || "", createdAt: nowIso(), leftTeam: teamPid };
+    state.projects.push(np);
+    for (const s of state.sheets.filter((s) => s.projectId === teamPid)) state.sheets.push({ ...JSON.parse(JSON.stringify(s)), id: uid("sht"), projectId: np.id });
+    for (const tm of state.team.filter((x) => x.projectId === teamPid)) state.team.push({ ...tm, id: uid("usr"), projectId: np.id });
+    const counts = copyWork(teamPid, np.id, who, true);
+    if (state.activeProjectId === teamPid) state.activeProjectId = np.id;
+    log(`Moved my work out of team ${team.name} into ${np.name}`);
+    sigsReady = false; trackChanges(); emit();
+    return { to: np.name, what: describe(counts) };
+  }
+  // Called after any sync / membership change on this device.
+  function teamCheck(teamPid) {
+    const p = state.projects.find((x) => x.id === teamPid); const who = state.user?.name;
+    if (!p?.team || !who) return null;
+    state.teamLocal ||= { imported: {}, movedOut: {} };
+    if ((p.team.members || []).includes(who)) {
+      if (state.teamLocal.movedOut[teamPid]) delete state.teamLocal.movedOut[teamPid]; // added back
+      const r = importMyWork(teamPid); return r && { joined: true, ...r };
+    }
+    if (p.team.memberLog?.[who] && !p.team.memberLog[who].in) { const r = takeMyWork(teamPid); return r && { left: true, ...r }; }
+    return null;
+  }
+
   function newTeamProject({ name, members, withSamples }) {
     let p;
     if (withSamples) {
@@ -362,7 +461,7 @@ PT.store = (() => {
   // The Instructor Dashboard calls viewOnly() so nothing it does is ever written over this browser's saved project.
   function viewOnly(on = true) { readOnly = on; }
 
-  return { TEAM_COLLS, shareFor, mergeTeam, setTeamMember, newTeamProject, takeChanges, teamProjectIds, applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
+  return { TEAM_COLLS, shareFor, mergeTeam, setTeamMember, teamCheck, importMyWork, takeMyWork, newTeamProject, takeChanges, teamProjectIds, applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
 })();
 
 
