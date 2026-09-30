@@ -115,6 +115,7 @@ A deliberate conflict is built into the set for the RFI lab (Lab 5).
 | 8 | [Moving to the real app](docs/modules/08-moving-to-the-real-app.md) | – | – |
 | ★ | **3A PlanGrid Project** – daily reports, time sheets, material docs, tasks & RFIs (graded automatically) | [3A Project](docs/labs/3a-plangrid-project.md) | – |
 | ★ | Real plan set: AT&T Upper Roof Replacement (plans from your instructor → Sheets → Upload) | – | [AT&T Reroof Blueprint Exercise](docs/quizzes/att-reroof-exercise.md) |
+| ★ | Practice plan set: Training Center Roof Replacement (Sheets → 📐 Load practice plans, or the [PDF](app/plans/jatc-training-center-practice-plans.pdf)) | – | [Practice Plan Exercise](docs/quizzes/practice-plans-exercise.md) |
 
 Plus: [Glossary](docs/glossary.md) · [Skills checklist](docs/skills-checklist.md) ·
 [Instructor guide](instructor/instructor-guide.md) · Answer keys: private repo `jatc-plangrid-instructor-keys`

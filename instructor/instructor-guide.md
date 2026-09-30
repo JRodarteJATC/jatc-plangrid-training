@@ -87,6 +87,7 @@ they send it, so grading works by file:
 | Lab 7 | Rubric from as-built markups, dimensions, RFI reference, AS-BUILT stamps, exports |
 | 3A PlanGrid Project | Rubric (100 pts) from their project: 5 daily reports with work/material/equipment logs, notes & photos · material documents uploaded · a time sheet for each day · 3 tasks (assigned, you watching, photo, delay/cost, published markups) · 3 RFIs to Juan Rodarte (sent & due dates, published markups) |
 | AT&T Reroof Blueprint Exercise | 20 short answers on the real AT&T plan set, scored by keywords 👁 (model answers shown in the detail view) |
+| Practice Plan Exercise | Same 20 questions on the Training Center practice set, scored by keywords 👁 |
 | Final | Written part vs. key + practical rubric from their project |
 | Training missions | All 32 re-checked from their actual work |
 
@@ -148,6 +149,26 @@ A 20-question exercise on a real bid set – *AT&T Upper Roof Replacement, 217 W
 - Answers and sheet references: `answer-keys.md` in the private repo. The dashboard scores by keywords
   and shows the model answer next to each response – #8, #9 and #20 are open-ended, so read them and
   override as needed.
+
+## Training Center practice plan set (made-up project at the JATC)
+The same 20 questions as the AT&T exercise, on an 11-sheet practice set drawn for this class:
+*Training Center Roof Replacement, 5537 E. Lamona Ave. #1, Fresno* (made-up consultants and companies;
+roof photos on A502 are JATC photos, with some equipment added digitally for training).
+
+- **Getting the plans to apprentices** – use any of these:
+  1. **In the app (easiest):** **Sheets → 📐 Load practice plans**. One tap downloads the set from the training
+     site and adds all 11 sheets as their own project (*Training Center Roof Replacement (practice plans)*).
+     In an empty team project the sheets go into that project, so every teammate taps the button once.
+  2. **PDF link / QR code:** `…/jatc-plangrid-training/plans/jatc-training-center-practice-plans.pdf`
+     (on the QR code sheet). Apprentices can also load it with **Sheets → Upload**.
+  3. **Hand out / print:** e-mail or LMS the PDF, or print it on 36"×24" (ARCH D) – it is drawn to scale at that size.
+- Apprentices answer under **Quizzes & Worksheets → Training Center Reroof – Practice Plan Exercise** (or the
+  printable [worksheet](../docs/quizzes/practice-plans-exercise.md)). The dashboard grades it in the **Practice**
+  column once `grading-key.json` is loaded.
+- The practice set is also a good choice for the **3A PlanGrid Project** – RFIs, tasks and daily reports on a
+  real-looking bid set instead of the sample drawings.
+- Answers with sheet references: `answer-keys.md` (private repo) → *Training Center Reroof – practice plan set*,
+  and the Word file *JATC Training Center Reroof – Answer Key (INSTRUCTOR)*. Read #8, #9 and #20 – they are open-ended.
 
 ## Tips
 - Project the app with the browser zoomed to 125%.

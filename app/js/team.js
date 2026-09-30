@@ -152,6 +152,7 @@ PT.team = (() => {
       for (let i = 0; i < docs.length; i += 300) {
         const batch = fb.db.batch();
         for (const d of docs.slice(i, i + 300)) {
+          if (d.coll === "sheets" && d.data.includes('"Practice set"')) continue; // every teammate loads the practice plans with one tap
           if (d.data.length > 950000) { if (!warnedBig) { toast("A plan sheet is too big for live sync – send it with the team file instead", "warn"); warnedBig = true; } continue; }
           batch.set(c.col.doc(docId(d.coll + "/" + d.id)), { coll: d.coll, id: d.id, data: d.data, by: device, at: new Date().toISOString() });
         }

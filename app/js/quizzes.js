@@ -1361,7 +1361,15 @@ PT.quizzes = (() => {
         }
       ]
     }
-  ];
+  ];  // Practice version of the blueprint exercise: same 20 questions, answered from the fictional
+  // JATC Training Center Roof Replacement plan set (posted with the app – Sheets → Load practice plans).
+  (() => {
+    const a = SETS.find((x) => x.id === "att");
+    SETS.push({ ...a, id: "practice", title: "Training Center Reroof – Practice Plan Exercise",
+      intro: "Use the JATC Training Center Roof Replacement practice plans (Sheets → 📐 Load practice plans, or the PDF your instructor gives you). All answers are contained within the prints.",
+      questions: a.questions.map((q) => ({ ...q })) });
+  })();
+
 
   /* Each apprentice sees the answer choices in a different order (seeded by their name), so
      "the answer is B" can't be passed around. Answers are stored by the original option

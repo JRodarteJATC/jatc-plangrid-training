@@ -59,7 +59,7 @@ PT.views = (() => {
     const all = sheetsSorted();
     const discs = [...new Set(all.map((s) => s.discipline).filter(Boolean))];
     const tags = [...new Set(all.flatMap((s) => s.tags || []))];
-    root.innerHTML = header("Sheets", `<button class="btn btn-primary" id="upBtn">⤒ Upload sheets (PDF / image)</button>`) + `
+    root.innerHTML = header("Sheets", `<button class="btn" id="ppBtn" title="Adds the 11-sheet JATC Training Center Roof Replacement practice set as its own project">📐 Load practice plans</button> <button class="btn btn-primary" id="upBtn">⤒ Upload sheets (PDF / image)</button>`) + `
       <div class="filters">
         <input type="search" id="fq" placeholder="Search sheet number or title…" value="${esc(sheetFilter.q)}">
         <select id="fd"><option value="">All disciplines</option>${options(discs, sheetFilter.disc)}</select>
@@ -87,6 +87,52 @@ PT.views = (() => {
     $("#fd", root).onchange = (e) => { sheetFilter.disc = e.target.value; draw(); };
     $("#ft", root).onchange = (e) => { sheetFilter.tag = e.target.value; draw(); };
     $("#upBtn", root).onclick = () => uploadSheets();
+    $("#ppBtn", root).onclick = () => loadPracticePlans();
+  }
+
+  /* One-tap load of the practice plan set (fictional project at the JATC's own address).
+     The PDF is posted with the app, so apprentices don't need a file from the instructor. */
+  const PRACTICE = {
+    url: "plans/jatc-training-center-practice-plans.pdf",
+    name: "Training Center Roof Replacement (practice plans)", number: "JATC-26-07", address: "5537 E. Lamona Ave. #1, Fresno, CA 93727",
+    sheets: [["G001", "General / Title / Cover Sheet", "Architectural"], ["A101D", "Partial Roof Plan – Demo Architectural", "Roofing"],
+      ["A101", "Partial Roof Plan – New Architectural", "Roofing"], ["A501", "Details – Architectural", "Roofing"], ["A502", "Details – Architectural", "Roofing"],
+      ["M101", "Second Floor Plan – New Mechanical", "Mechanical"], ["M102D", "Partial Roof Plan – Demo Mechanical", "Mechanical"],
+      ["M102", "Partial Roof Plan – New Mechanical", "Mechanical"], ["M501", "Details – Mechanical", "Mechanical"], ["M502", "Details – Mechanical", "Mechanical"],
+      ["M503", "Schedules – Mechanical", "Mechanical"]],
+  };
+  let practiceBusy = false;
+  async function loadPracticePlans() {
+    const s = store.get();
+    const hasPP = (pid) => s.sheets.some((sh) => sh.projectId === pid && (sh.tags || []).includes("Practice set"));
+    const cur = s.projects.find((p) => p.id === s.activeProjectId);
+    // An empty project (e.g. a new team project) gets the sheets; otherwise use/create the practice project.
+    let target = cur && !s.sheets.some((sh) => sh.projectId === cur.id) ? cur : s.projects.find((p) => p.practicePlans);
+    const done = target && hasPP(target.id) ? target : s.projects.find((p) => hasPP(p.id));
+    if (done) {
+      s.activeProjectId = done.id; store.emit(); PT.app.renderChrome(); location.hash = "#/sheets";
+      return toast("Practice plans are already loaded – switched to that project", "ok");
+    }
+    if (practiceBusy) return;
+    practiceBusy = true;
+    try {
+      toast("Downloading the practice plans (about 9 MB) – this can take a minute…");
+      const res = await fetch(PRACTICE.url);
+      if (!res.ok) throw new Error("Could not download the practice plans (" + res.status + "). Ask your instructor for the PDF and use Upload.");
+      const pages = await fileToPages(new File([await res.blob()], "practice-plans.pdf", { type: "application/pdf" }));
+      const p = target || store.newProject(PRACTICE.name, PRACTICE.number, PRACTICE.address);
+      if (!p.team) p.practicePlans = true;
+      s.activeProjectId = p.id;
+      pages.forEach((pg, i) => {
+        const [number, title, discipline] = PRACTICE.sheets[i] || [pg.guess || `P-${i + 1}`, pg.name, "Roofing"];
+        // same ids on every device, so teammates who each load the plans get the same sheets when they sync
+        store.add("sheets", { id: `pp-${p.id}-${number}`, projectId: p.id, number, title, discipline, tags: ["Practice set"], current: 0,
+          versions: [{ id: `ppv-${p.id}-${number}`, rev: "0", set: "Bid Set", date: today(), src: { kind: "image", dataUrl: pg.dataUrl }, w: pg.w, h: pg.h, ppi: pg.ppi || null, scalePxPerFt: null, links: [] }] });
+      });
+      store.log(`Loaded practice plans (${pages.length} sheets)`); store.event("upload_sheet", { count: pages.length, practice: true }); store.emit();
+      PT.app.renderChrome(); location.hash = "#/sheets"; PT.app.route && PT.app.route();
+      toast(`Practice plans loaded – ${pages.length} sheets. Calibrate with each sheet's graphic scale bar before measuring.`, "ok");
+    } catch (e) { toast(e.message, "warn"); } finally { practiceBusy = false; }
   }
 
   let pdfjsPromise = null;

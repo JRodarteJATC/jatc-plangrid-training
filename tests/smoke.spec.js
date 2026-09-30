@@ -388,3 +388,17 @@ test("long forms keep their buttons on screen (tablet) and the class roster is o
   await expect(page.locator("#prof input[name=email]")).toHaveValue(/27@gmail\.com$|_27@gmail\.com$/);
   expect(page.errors).toEqual([]);
 });
+
+test("practice plans load in one tap as their own project, with a practice exercise", async ({ page }) => {
+  test.setTimeout(180000);
+  await page.goto("/#/sheets");
+  await page.click("#ppBtn");
+  await expect.poll(() => page.evaluate(() => PT.store.list("sheets").length), { timeout: 150000 }).toBe(11);
+  const info = await page.evaluate(() => ({ p: PT.store.project().name, nums: PT.store.list("sheets").map((s) => s.number), q: !!PT.quizzes.find("practice") }));
+  expect(info.p).toContain("practice");
+  expect(info.nums).toEqual(["G001", "A101D", "A101", "A501", "A502", "M101", "M102D", "M102", "M501", "M502", "M503"]);
+  expect(info.q).toBe(true);
+  await page.goto("/#/"); await page.goto("/#/sheets"); await page.click("#ppBtn"); // second tap just switches back, no duplicates
+  expect(await page.evaluate(() => PT.store.get().sheets.filter((s) => (s.tags || []).includes("Practice set")).length)).toBe(11);
+  expect(page.errors).toEqual([]);
+});

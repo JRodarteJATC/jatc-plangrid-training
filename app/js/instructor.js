@@ -28,6 +28,7 @@
     ...[1, 2, 3, 4, 5, 6, 7].map((n) => ({ id: `lab${n}`, label: `L${n}`, title: `Lab ${n}`, group: "Labs" })),
     { id: "proj3a", label: "3A Proj", title: "3A PlanGrid Project", group: "Project" },
     { id: "att", label: "AT&T", title: "AT&T Reroof Blueprint Exercise", group: "Blueprint" },
+    { id: "practice", label: "Practice", title: "Training Center Reroof – Practice Plan Exercise", group: "Blueprint" },
     { id: "final", label: "Final", title: "Final exam (written + practical)", group: "Final" },
   ];
 
@@ -80,6 +81,7 @@
         lab6: [rb("Lab 6 field day (auto rubric)", G.lab6()), scale(qs("lab6", "Lab 6 compare worksheet"), 4)],
         lab7: [rb("Lab 7 as-builts (auto rubric)", G.lab7())],
         att: [qs("att", "AT&T Reroof Blueprint Exercise")],
+        practice: [qs("practice", "Practice Plan Exercise")],
         proj3a: [rb("3A PlanGrid Project (auto rubric)", G.project3a())],
         final: [qs("final", "Final – written"), rb("Final – practical (auto rubric)", G.finalPractical())],
       };

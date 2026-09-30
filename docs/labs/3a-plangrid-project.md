@@ -4,7 +4,8 @@
 **Turn in:** Settings → **Export backup (.json)** → send the file to your instructor.
 Your work is graded automatically from that file (100 points).
 
-You can do the project in the sample project (*Central Valley Training Center – Bldg B*) **or** in
+You can do the project in the sample project (*Central Valley Training Center – Bldg B*), in the
+**practice plan set** (**Sheets → 📐 Load practice plans** – 11 sheets of a reroof at the JATC), **or** in
 your own project with real plans:
 **Settings → New project**, then **Sheets → Upload** your plan PDF. Juan Rodarte is already on the team
 of every project. If you have more than one project, the one with the best work is graded.
