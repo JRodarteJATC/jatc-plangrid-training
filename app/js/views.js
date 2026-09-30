@@ -379,8 +379,9 @@ PT.views = (() => {
     const r = rfi || { subject: "", question: "", suggestion: "", status: "Draft", assignedTo: "", dueDate: "", costImpact: "Unknown", scheduleImpact: "Unknown", sheetIds: [], answer: "" };
     // RFIs sent to the instructor are answered ONLY by the instructor (Instructor Dashboard) – apprentices can't write the answer.
     const toInstr = /rodarte|instructor/i.test(r.assignedTo || "") || (store.list("team").find((t) => t.name === r.assignedTo)?.role === "Instructor");
-    const canAnswer = !isNew && !toInstr && (r.status === "Open" || r.status === "Answered");
-    const statusChoices = toInstr && !r.answer ? RFI_STATUS.filter((s) => s !== "Answered") : RFI_STATUS;
+    const locked = toInstr && !store.isInstructor();
+    const canAnswer = !isNew && !locked && (r.status === "Open" || r.status === "Answered");
+    const statusChoices = locked && !r.answer ? RFI_STATUS.filter((s) => s !== "Answered") : RFI_STATUS;
     const { el } = modal({
       title: isNew ? "New RFI" : `RFI-${String(r.number).padStart(3, "0")}: ${r.subject}`, wide: true, submitLabel: "Save",
       extraButtons: isNew ? `<button type="button" class="btn" id="sendNow">Save & Send (Open)</button>` :
@@ -399,7 +400,7 @@ PT.views = (() => {
           <label>Schedule impact <select name="scheduleImpact">${options(["Unknown", "Yes", "No"], r.scheduleImpact)}</select></label>
           <label class="span2">Referenced sheets <select name="sheetIds" multiple size="4">${sheetsSorted().map((s) => `<option value="${s.id}" ${(r.sheetIds || []).includes(s.id) ? "selected" : ""}>${esc(s.number)} – ${esc(s.title)}</option>`).join("")}</select></label>
           ${!isNew ? `<label>Status <select name="status">${options(statusChoices, r.status)}</select></label>` : ""}
-          ${toInstr && !isNew ? (r.answer ? `<div class="span2"><b>Official answer</b> <span class="muted small">(from ${esc(r.answeredBy || r.assignedTo)}${r.answeredAt ? ", " + fmtDateTime(r.answeredAt) : ""})</span><p class="answer-box">${esc(r.answer)}</p></div>` : `<p class="muted small span2">Waiting for ${esc(r.assignedTo)} to answer – the answer appears here by itself.</p>`)
+          ${locked && !isNew ? (r.answer ? `<div class="span2"><b>Official answer</b> <span class="muted small">(from ${esc(r.answeredBy || r.assignedTo)}${r.answeredAt ? ", " + fmtDateTime(r.answeredAt) : ""})</span><p class="answer-box">${esc(r.answer)}</p></div>` : `<p class="muted small span2">Waiting for ${esc(r.assignedTo)} to answer – the answer appears here by itself.</p>`)
             : canAnswer || r.answer ? `<label class="span2">Official answer <textarea name="answer" rows="3" placeholder="Reviewer's response">${esc(r.answer || "")}</textarea></label>` : ""}
         </div>
         ${!isNew ? `<h3>History</h3><ul class="comments">${(r.history || []).map((x) => `<li><span class="muted">${fmtDateTime(x.at)}</span> ${esc(x.text)}</li>`).join("") || "<li class='muted'>—</li>"}</ul>` : ""}`,
@@ -418,7 +419,7 @@ PT.views = (() => {
     if (f.sentDate !== undefined) data.sentDate = f.sentDate;
     if (status !== "Draft" && !(data.sentDate || r.sentDate)) data.sentDate = today();
     if (action === "close") status = "Closed";
-    const toInstr = /rodarte|instructor/i.test(f.assignedTo || r.assignedTo || "");
+    const toInstr = /rodarte|instructor/i.test(f.assignedTo || r.assignedTo || "") && !store.isInstructor();
     if (f.answer !== undefined && !(toInstr && !isNew)) data.answer = f.answer;
     if (toInstr && !r.answer && status === "Answered") status = r.status === "Answered" ? "Open" : r.status || "Open"; // only the instructor's answer makes it Answered
     if (data.answer && status === "Open") status = "Answered";
@@ -431,7 +432,12 @@ PT.views = (() => {
       const prev = r.status;
       r.history = r.history || [];
       if (prev !== status) r.history.push(hist(`${prev} → ${status}`));
-      if (data.answer && data.answer !== (r.answer || "")) { r.history.push(hist("answered")); data.answeredBy = store.get().user.name; }
+      if (data.answer && data.answer !== (r.answer || "")) {
+        r.history.push(hist("answered")); data.answeredBy = store.get().user.name; data.answeredAt = new Date().toISOString();
+        // instructor answering in the app: the answer also goes straight to the apprentice's own app
+        if (store.isInstructor() && r.createdBy && r.createdBy !== store.get().user.name && PT.rfiLive?.enabled())
+          PT.rfiLive.sendAnswers([{ id: r.copiedFrom || r.id, answer: data.answer, answeredBy: data.answeredBy, answeredAt: data.answeredAt }]).catch(() => {});
+      }
       store.update("rfis", r.id, { ...data, status }, `RFI-${r.number} ${prev !== status ? prev + " → " + status : "updated"}`);
       store.event("rfi_status", { id: r.id, status });
     }
@@ -771,7 +777,7 @@ PT.views = (() => {
         <section class="card"><h2>Your profile</h2>
           <form id="prof" class="form-grid">
             <label>Your name <input name="name" list="rosterList" value="${esc(s.user.name)}" placeholder="Pick your name from the class list"></label>
-            <datalist id="rosterList">${PT.roster.APPRENTICES.map((a) => `<option value="${esc(a.name)}" label="#${a.no}">#${a.no} – ${esc(a.name)}</option>`).join("")}</datalist>
+            <datalist id="rosterList">${PT.roster.APPRENTICES.map((a) => `<option value="${esc(a.name)}" label="#${a.no}">#${a.no} – ${esc(a.name)}</option>`).join("")}<option value="${esc(PT.roster.INSTRUCTOR.name)}" label="Instructor">Instructor – ${esc(PT.roster.INSTRUCTOR.name)}</option></datalist>
             <label>Company (employer) <span class="row gap"><input name="company" list="coList" value="${esc(s.user.company || "")}" style="flex:1"><button type="button" class="btn btn-sm" id="rndCo" title="Pick a random practice company">🎲</button></span></label>
             <datalist id="coList">${PT.roster.COMPANIES.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
             <label>E-mail <span class="row gap"><input name="email" type="email" value="${esc(s.user.email || "")}" style="flex:1"><button type="button" class="btn btn-sm" id="rndEm" title="Make a practice e-mail">🎲</button></span></label>
@@ -780,6 +786,7 @@ PT.views = (() => {
             <label>Role on project <select name="role">${options(["Apprentice", "Journeyman", "Foreman", "Instructor"], s.user.role)}</select></label>
             <div><button class="btn btn-primary">Save profile</button></div>
           </form>
+          ${store.isInstructor() ? `<p class="badge st-Closed" style="display:block;white-space:normal">👨‍🏫 <b>Instructor mode is on</b> – you can answer RFIs sent to you, you're on every team project, and Team Project shows all class teams. To leave instructor mode, pick an apprentice name and save.</p>` : ""}
           <p class="note-made-up">ⓘ ${esc(PT.roster.NOTE)}</p>
           <p class="muted small">Your name appears on markups, issues, and reports. Picking your name fills in your employer and a practice e-mail – change them if you like (the app never sends e-mail). 🎲 picks a random practice company or e-mail.</p>
           <p class="small">Instructor: <b>${esc(PT.roster.INSTRUCTOR.name)}</b> · <a href="mailto:${esc(PT.roster.INSTRUCTOR.email)}">${esc(PT.roster.INSTRUCTOR.email)}</a> · <a href="tel:${esc(PT.roster.INSTRUCTOR.phone)}">${esc(PT.roster.INSTRUCTOR.phone)}</a></p>
@@ -797,7 +804,20 @@ PT.views = (() => {
       </div>`;
     $("#prof", root).onsubmit = (e) => {
       e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
-      s.user = { ...s.user, ...f };
+      const wantsInstr = PT.roster.isInstructorName(f.name) || f.role === "Instructor";
+      if (wantsInstr && !s.user.instructor) {
+        // instructor mode needs the passcode from the (confidential) Instructor Packet
+        return modal({ title: "Instructor passcode", body: `<p>Instructor mode lets you answer RFIs and join every team. Enter the instructor passcode (in the Instructor Packet).</p><label>Passcode <input name="code" autocomplete="off" autocapitalize="characters" required data-label="Passcode"></label>`,
+          submitLabel: "Turn on instructor mode",
+          onSubmit: async (m) => {
+            if (!(await PT.roster.checkPasscode(m.code))) { toast("Wrong passcode", "warn"); return false; }
+            const I = PT.roster.INSTRUCTOR;
+            s.user = { ...s.user, ...f, name: I.name, role: "Instructor", company: I.company, email: I.email, phone: I.phone, instructor: true };
+            store.log("Instructor mode on"); store.emit(); toast("Instructor mode on", "ok"); PT.app.renderChrome(); route();
+          } });
+      }
+      if (wantsInstr && s.user.instructor) { f.name = PT.roster.INSTRUCTOR.name; f.role = "Instructor"; }
+      s.user = { ...s.user, ...f, instructor: wantsInstr && !!s.user.instructor };
       const me = store.list("team").find((t) => t.name === f.name);
       if (!me) store.add("team", { name: f.name, role: f.role, company: f.company || "Central Valley JATC", email: f.email || "", phone: f.phone || "" });
       else Object.assign(me, { company: f.company || me.company, email: f.email || me.email, phone: f.phone || me.phone });

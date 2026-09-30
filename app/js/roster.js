@@ -6,6 +6,15 @@ PT.roster = (() => {
   const NOTE = "Names, companies, e-mails and phone numbers in this training app are made up for practice.";
   const INSTRUCTOR = { name: "Juan Rodarte", role: "Instructor", company: "Central Valley JATC", email: "jrodarte@centralvalleyjatc.com", phone: "559-555-0127" };
 
+  // Instructor mode in the apprentice app needs a passcode (only its SHA-256 is stored here; the passcode is in the
+  // CONFIDENTIAL Instructor Packet). Change it: sha256("plan-trainer:" + NEWCODE in capitals).
+  const INSTRUCTOR_PASS_SHA256 = "5952f52d9d996db68facb8f7c3a8a4c165fcf7da53858bf759e4af1c571865dc";
+  const isInstructorName = (n) => !!n && (n.trim().toLowerCase() === INSTRUCTOR.name.toLowerCase());
+  async function checkPasscode(code) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("plan-trainer:" + String(code || "").trim().toUpperCase()));
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("") === INSTRUCTOR_PASS_SHA256;
+  }
+
   const CLASS = "3A – Intro to Plans · Fresno Central Valley (practice names)";
   // Practice (made-up) California union roofing contractors.
   const COMPANIES = [
@@ -41,5 +50,5 @@ PT.roster = (() => {
   const randomCompany = (not) => { const list = COMPANIES.filter((c) => c !== not); return list[Math.floor(Math.random() * list.length)]; };
   const find = (name) => APPRENTICES.find((a) => a.name.toLowerCase() === String(name || "").trim().toLowerCase());
 
-  return { NOTE, INSTRUCTOR, CLASS, APPRENTICES, EMPLOYERS, PRACTICE_COMPANIES, COMPANIES, practiceEmail, randomEmail, randomCompany, find };
+  return { NOTE, INSTRUCTOR, isInstructorName, checkPasscode, CLASS, APPRENTICES, EMPLOYERS, PRACTICE_COMPANIES, COMPANIES, practiceEmail, randomEmail, randomCompany, find };
 })();

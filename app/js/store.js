@@ -47,6 +47,11 @@ PT.store = (() => {
       const ins = have.find((t) => t.name === INSTRUCTOR.name);
       if (!ins) s.team.push({ ...INSTRUCTOR, id: uid("usr"), projectId: p.id });
       else { if (!ins.email) ins.email = INSTRUCTOR.email; if (!ins.phone) ins.phone = INSTRUCTOR.phone; }
+      // the instructor is a member of every team project (not counted in the team's grade)
+      if (p.team) {
+        p.team.members ||= [];
+        if (!p.team.members.includes(INSTRUCTOR.name) && p.team.memberLog?.[INSTRUCTOR.name]?.in !== false) p.team.members.push(INSTRUCTOR.name);
+      }
       // the class roster, so apprentices can assign tasks to classmates
       for (const a of PT.roster.APPRENTICES) {
         const t = have.find((t) => t.name === a.name);
@@ -141,6 +146,8 @@ PT.store = (() => {
     const out = new Set(Object.entries(log).filter(([n, e]) => !e.in && !(p.team.members || []).includes(n)).map(([n]) => n));
     return out.size ? out : null;
   }
+  const isInstructor = () => !!state?.user?.instructor;
+  const isInstr = (n) => PT.roster.isInstructorName(n);
   const list = (coll) => {
     const id = pid(), arr = state[coll].filter((r) => r.projectId === id);
     if (!WORK_COLLS.includes(coll)) return arr;
@@ -265,7 +272,7 @@ PT.store = (() => {
       if (sigsReady) changed.add(k);
     }
     if (changed.size > 5000) changed.clear(); // nobody is live-syncing
-    for (const p of state.projects) if (ids.has(p.id)) { const k = "projects/" + p.id, h = sig(p); if (sigs.get(k) !== h) { if (sigsReady && sigs.has(k)) p.updatedAt = now; sigs.set(k, h); if (sigsReady) changed.add(k); } }
+    for (const p of state.projects) if (ids.has(p.id)) { const k = "projects/" + p.id, h = sig(p); if (sigs.get(k) !== h) { if (sigsReady && sigs.has(k) && p.updatedAt !== "0") p.updatedAt = now; sigs.set(k, h); if (sigsReady) changed.add(k); } }
     for (const [id, t] of Object.entries(state.tombstones || {})) if (ids.has(t.projectId) && !sigs.has("x/" + id)) { sigs.set("x/" + id, 1); if (sigsReady) changed.add("tombstones/" + id); }
     sigsReady = true;
   }
@@ -334,6 +341,7 @@ PT.store = (() => {
         used.add(+r.number);
       }
     }
+    ensureInstructor(st);
     if (st === state) { sigsReady = false; trackChanges(); if (!noEmit) emit(); }
     return stats;
   }
@@ -406,7 +414,7 @@ PT.store = (() => {
   function importMyWork(teamPid) {
     const who = state.user?.name; const team = state.projects.find((p) => p.id === teamPid);
     state.teamLocal ||= { imported: {}, movedOut: {} };
-    if (!team?.team || !who || state.teamLocal.imported[teamPid]) return null;
+    if (!team?.team || !who || state.teamLocal.imported[teamPid] || isInstructor()) return null;
     state.teamLocal.imported[teamPid] = nowIso();
     const score = (p) => ["issues", "rfis", "reports"].reduce((n, c) => n + state[c].filter((r) => r.projectId === p.id && AUTHOR(c, r) === who && !r.seed).length, 0);
     const from = state.projects.filter((p) => !p.team && p.id !== teamPid).map((p) => ({ p, n: score(p) })).sort((a, b) => b.n - a.n)[0];
@@ -423,7 +431,7 @@ PT.store = (() => {
   function takeMyWork(teamPid) {
     const who = state.user?.name; const team = state.projects.find((p) => p.id === teamPid);
     state.teamLocal ||= { imported: {}, movedOut: {} };
-    if (!team?.team || !who || state.teamLocal.movedOut[teamPid]) return null;
+    if (!team?.team || !who || state.teamLocal.movedOut[teamPid] || isInstructor()) return null;
     state.teamLocal.movedOut[teamPid] = nowIso();
     const home = state.projects.find((p) => p.id === state.teamLocal.from?.[teamPid] && !p.team)
       || state.projects.filter((p) => !p.team && p.id !== teamPid).sort((a, b) => ["issues", "rfis", "reports"].reduce((n, c) => n + state[c].filter((r) => r.projectId === b.id && AUTHOR(c, r) === who).length, 0) - ["issues", "rfis", "reports"].reduce((n, c) => n + state[c].filter((r) => r.projectId === a.id && AUTHOR(c, r) === who).length, 0))[0];
@@ -486,7 +494,7 @@ PT.store = (() => {
   // The Instructor Dashboard calls viewOnly() so nothing it does is ever written over this browser's saved project.
   function viewOnly(on = true) { readOnly = on; }
 
-  return { TEAM_COLLS, shareFor, mergeTeam, setTeamMember, teamCheck, importMyWork, takeMyWork, newTeamProject, takeChanges, teamProjectIds, applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
+  return { isInstructor, TEAM_COLLS, shareFor, mergeTeam, setTeamMember, teamCheck, importMyWork, takeMyWork, newTeamProject, takeChanges, teamProjectIds, applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
 })();
 
 

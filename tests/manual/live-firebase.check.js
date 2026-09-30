@@ -12,7 +12,7 @@ async function fresh(page, name) {
 const S = (p, fn, a) => p.evaluate(fn, a);
 test("real firebase live sync", async ({ browser }) => {
   test.setTimeout(120000);
-  const mk = async () => (await browser.newContext({ acceptDownloads: true, ignoreHTTPSErrors: true, proxy: { server: process.env.HTTPS_PROXY, bypass: "<-loopback>,localhost,127.0.0.1" } })).newPage();
+  const mk = async () => { const c = await browser.newContext({ acceptDownloads: true, ignoreHTTPSErrors: true, proxy: { server: process.env.HTTPS_PROXY, bypass: "<-loopback>,localhost,127.0.0.1" } }); await c.addInitScript(() => localStorage.setItem("pt-allow-real-cloud", "1")); return c.newPage(); };
   const A = await mk(), B = await mk();
   for (const p of [A, B]) { p.on("pageerror", (e) => console.log("PAGEERR", e.message)); p.on("console", (m) => m.type() === "error" && console.log("CONSOLE", m.text().slice(0, 300))); }
   await fresh(A, "Mateo Ramirez"); await fresh(B, "Luis Herrera");

@@ -56,7 +56,7 @@ PT.rfiLive = (() => {
       if (busy) return; busy = true;
       try {
         const st = store.get(), me = st.user?.name || "";
-        if (!me || me === "Apprentice") return;
+        if (!me || me === "Apprentice" || st.user?.instructor) return; // the instructor doesn't send RFIs to themselves
         // RFIs the apprentice deleted come out of the instructor's inbox too
         const pushed = read("pt-rfi-live-roots", {});
         const roots = new Set((st.rfis || []).map((r) => r.copiedFrom || r.id));

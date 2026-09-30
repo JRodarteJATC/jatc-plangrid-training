@@ -215,7 +215,7 @@ PT.grading = (() => {
     const results = (S.projects || []).map((p) => {
       const of = (c) => (S[c] || []).filter((x) => x.projectId === p.id);
       // team project: the whole team's work counts for every member (the dashboard shows who did what)
-      const members = p.team?.members?.includes(who) ? p.team.members : [who];
+      const members = p.team?.members?.includes(who) ? p.team.members.filter((n) => !PT.roster.isInstructorName(n)) : [who]; // the instructor isn't graded
       const mine = (n) => members.includes(n);
       const team = of("team");
       const mkp = of("markups").filter((m) => mine(m.createdBy));

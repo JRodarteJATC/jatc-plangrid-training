@@ -128,6 +128,14 @@ removed goes back to their own project (their pre-team work is still there, plus
 their work is hidden from the team; they are graded on
 **their own** work only and the team's score no longer includes it.
 
+**Instructor mode in the app (full access):** on your own device open the app → **Settings → Your profile** → pick
+**Juan Rodarte** (bottom of the name list) → **Save profile** → type the **instructor passcode** (it's in the
+CONFIDENTIAL Instructor Packet – never give it to apprentices). Instructor mode lets you:
+- **answer RFIs** sent to you right in the app (apprentices can't answer their own) – the answer reaches the apprentice's app;
+- be a **member of every team project** automatically (shown as *Instructor*, never counted in the team's grade or the 2–4 limit);
+- see **👨‍🏫 All class teams** on the Team Project page and tap **Follow** to watch any team's work live on your device.
+Team projects turn on live sync by themselves so their work reaches you. To leave instructor mode, pick an apprentice name and save.
+
 **Answering their RFIs (RFI inbox) – live:**
 1. Open the **Instructor Dashboard** – no files needed. RFIs apprentices send to Juan Rodarte (status Open, not
    Draft) arrive in **📨 RFI inbox** by themselves within a few seconds, while their device is online.

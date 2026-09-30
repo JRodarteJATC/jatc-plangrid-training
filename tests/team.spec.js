@@ -94,7 +94,7 @@ test("remove a teammate, leave a team, and add someone back – survives syncing
   await A.click(".modal button[type=submit]");
   const fa = await sendTeamFile(A);
   await syncFiles(B, [fa]); await syncFiles(C, [fa]);
-  const members = (P) => S(P, () => PT.store.get().projects.find((p) => p.name === "Team 2").team.members.slice().sort());
+  const members = (P) => S(P, () => PT.store.get().projects.find((p) => p.name === "Team 2").team.members.filter((n) => n !== "Juan Rodarte").sort());
 
   // A removes Luis in the app
   await A.goto("/#/teamproject");
@@ -185,7 +185,7 @@ const FAKE_FIREBASE = `
 (() => {
   const listeners = [];
   const col = (path, filt) => ({
-    doc: (id) => ({ _path: path + "/" + id, collection: (c) => col(path + "/" + id + "/" + c) }),
+    doc: (id) => ({ _path: path + "/" + id, collection: (c) => col(path + "/" + id + "/" + c), set: (obj) => window.__relaySet([[path + "/" + id, obj]]) }),
     where: (f, op, val) => col(path, (v) => v[f] === val),
     get: async () => ({ docs: Object.values(await window.__relayGet(path)).filter((v) => !filt || filt(v)).map((v) => ({ data: () => v })) }),
     onSnapshot(cb) {
@@ -222,7 +222,8 @@ test("live sync: a teammate's change shows up by itself", async ({ browser }) =>
   await A.check(".modal input[name=m][value='Luis Herrera']");
   await A.click(".modal button[type=submit]");
   await syncFiles(B, [await sendTeamFile(A)]);   // join once with the team file (carries the team code)
-  for (const P of [A, B]) { await P.goto("/#/teamproject"); await P.click("[data-live]"); await expect(P.locator(".team-card")).toContainText("Live sync"); }
+  // live sync turns on by itself for team projects
+  for (const P of [A, B]) { await P.goto("/#/teamproject"); await expect(P.locator(".team-card")).toContainText("Live sync", { timeout: 10000 }); }
 
   await addRfi(A, "Live RFI from Mateo");
   await expect.poll(() => S(B, () => PT.store.list("rfis").map((r) => r.subject)), { timeout: 10000 }).toContain("Live RFI from Mateo");
@@ -276,5 +277,57 @@ test("RFIs sent to the instructor arrive in the dashboard inbox live, and answer
   await expect(T.locator(".rfi-card")).toHaveCount(0);
   await expect.poll(() => Object.keys(cloud).filter((k) => k.includes("rfi__")).length).toBe(0);
   expect(Object.keys(cloud).some((k) => k.includes("del__"))).toBe(true);
+  expect(errs).toEqual([]);
+});
+
+test("instructor mode: passcode, answer RFIs in the app, member of every team, follow all class teams", async ({ browser }) => {
+  const cloud = {};
+  const mk = async () => {
+    const ctx = await browser.newContext({ acceptDownloads: true });
+    await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/"))));
+    await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) { if (v === null) delete cloud[k]; else cloud[k] = v; } });
+    await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
+    await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
+    return ctx.newPage();
+  };
+  const A = await mk(), T = await mk();
+  const errs = []; for (const p of [A, T]) p.on("pageerror", (e) => errs.push(e.message));
+  await fresh(A, "Mateo Ramirez");
+  // apprentice starts a team – the instructor is on it automatically, not counted as a teammate
+  await A.goto("/#/teamproject"); await A.click("#startBtn"); await A.fill(".modal input[name=name]", "Team Alpha");
+  await A.check(".modal input[name=m][value='Luis Herrera']"); await A.click(".modal button[type=submit]");
+  expect(await S(A, () => PT.store.project().team.members)).toContain("Juan Rodarte");
+  await expect(A.locator(".team-card")).toContainText("Instructor");
+  await S(A, () => PT.store.add("rfis", { number: PT.store.nextNumber("rfis"), subject: "Team RFI", question: "q", assignedTo: "Juan Rodarte", status: "Open", sheetIds: [], createdBy: "Mateo Ramirez" }));
+  await expect.poll(() => Object.keys(cloud).some((k) => k.includes("jatc-team-directory")), { timeout: 10000 }).toBe(true);
+
+  // instructor picks his name: wrong passcode first, then the right one
+  await T.goto("/#/settings");
+  await T.fill("#prof input[name=name]", "Juan Rodarte"); await T.click("#prof button.btn-primary");
+  await T.fill(".modal input[name=code]", "WRONG"); await T.click(".modal button[type=submit]");
+  expect(await S(T, () => PT.store.isInstructor())).toBe(false);
+  await T.fill(".modal input[name=code]", "jr-6zvv-py7p"); await T.click(".modal button[type=submit]");
+  await expect.poll(() => S(T, () => PT.store.isInstructor())).toBe(true);
+  expect(await S(T, () => PT.store.get().user.name)).toBe("Juan Rodarte");
+
+  // all class teams → follow → the team's work shows up on the instructor's device
+  await T.goto("/#/teamproject");
+  await expect(T.locator("#allTeams")).toContainText("Team Alpha", { timeout: 10000 });
+  await T.click("[data-follow]");
+  await expect.poll(() => S(T, () => PT.store.get().rfis.some((r) => r.subject === "Team RFI")), { timeout: 15000 }).toBe(true);
+  // the instructor can answer the RFI in the app; it reaches the apprentice
+  await S(T, () => { const p = PT.store.get().projects.find((x) => x.name === "Team Alpha"); PT.store.get().activeProjectId = p.id; PT.store.emit(); });
+  await T.goto("/#/rfis");
+  const rid = await S(T, () => PT.store.list("rfis").find((r) => r.subject === "Team RFI").id);
+  await T.click(`tr[data-id="${rid}"] td:nth-child(3)`);
+  await T.fill(".modal textarea[name=answer]", "Approved – proceed.");
+  await T.click(".modal button[type=submit]");
+  await expect.poll(() => S(A, () => { const r = PT.store.get().rfis.find((x) => x.subject === "Team RFI"); return r.status + "|" + r.answer; }), { timeout: 15000 }).toBe("Answered|Approved – proceed.");
+  // grading doesn't count the instructor as a team member
+  const bA = Buffer.from(await S(A, () => PT.store.exportJSON()));
+  await A.goto("/instructor.html"); const ch = A.waitForEvent("filechooser"); await A.click("#pickBtn");
+  await (await ch).setFiles([{ name: "a.json", mimeType: "application/json", buffer: bA }]);
+  await A.click("[data-stu='mateo ramirez']");
+  await expect(A.locator(".modal")).toContainText("TEAM PROJECT – Mateo Ramirez, Luis Herrera (team score");
   expect(errs).toEqual([]);
 });
