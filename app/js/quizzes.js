@@ -1367,7 +1367,8 @@ PT.quizzes = (() => {
     const a = SETS.find((x) => x.id === "att");
     SETS.push({ ...a, id: "practice", title: "Training Center Reroof – Practice Plan Exercise",
       intro: "Use the JATC Training Center Roof Replacement practice plans (Sheets → 📐 Load practice plans, or the PDF your instructor gives you). All answers are contained within the prints.",
-      questions: a.questions.map((q) => ({ ...q })) });
+      // #20 points to the practice project's address (the JATC), not the AT&T site
+      questions: a.questions.map((q) => (q.id === "20" ? { ...q, q: "Google Earth the project (5537 E. Lamona Ave. #1, Fresno, CA 93727) and list any concerns you see." } : { ...q })) });
   })();
 
 

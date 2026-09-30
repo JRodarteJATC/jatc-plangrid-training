@@ -84,7 +84,7 @@ Before measuring, set the scale with the **graphic scale bar** under each drawin
 
    ____________________________________________________________  Sheet: ______
 
-20. Google Earth the project (217 W. Acequia Ave, Visalia, CA) and list any concerns you see.
+20. Google Earth the project (5537 E. Lamona Ave. #1, Fresno, CA 93727) and list any concerns you see.
 
    ____________________________________________________________  Sheet: ______
 
