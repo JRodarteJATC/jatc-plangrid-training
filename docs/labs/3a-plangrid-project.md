@@ -80,9 +80,11 @@ and specs, missing information, field conditions).
 - **Response due** date
 - Reference the **sheets**, and mark up those sheets → **Publish** the markups
 - Click **Save & Send** – the **Sent date** is filled in automatically
-- **Getting the answer:** turn in your backup (Settings → Export backup). When your instructor sends back the
-  **RFI answers file**, open **RFIs → ⤒ Import instructor answers** and choose it. Your RFIs change to
-  **Answered** and show the official answer. Close them once the answer is shared with the crew.
+- With internet, the RFI goes **straight to your instructor's inbox** – you'll see *"RFI sent to your instructor's
+  inbox"*. A **Draft** is not sent.
+- **Getting the answer:** it shows up in your app by itself (status **Answered**, with the official answer).
+  No internet? Your instructor sends an **RFI answers file** instead – open **RFIs → ⤒ Import instructor answers**
+  and choose it. Close the RFI once the answer is shared with the crew.
 
 ---
 

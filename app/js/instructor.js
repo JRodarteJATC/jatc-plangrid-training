@@ -99,7 +99,7 @@
       }
       r.issues = L("issues").filter((i) => i.createdBy === me);
       // RFIs from every project (the 3A project may be a separate project with real plans)
-      r.rfis = (state.rfis || []).filter((x) => x.createdBy === me).map((x) => {
+      r.rfis = (state.rfis || []).filter((x) => x.createdBy === me || !x.createdBy || (x.createdBy === "Apprentice" && /rodarte|instructor/i.test(x.assignedTo || ""))).map((x) => {
         const shs = (state.sheets || []).filter((sh) => (x.sheetIds || []).includes(sh.id));
         return { ...x, project: (state.projects || []).find((p) => p.id === x.projectId)?.name || "",
           sheets: shs.map((sh) => sh.number).join(", "),
@@ -173,7 +173,7 @@
           ${students.length ? `<select id="clsF" title="Filter by class (Exhibit C week)"><option value="">All classes</option>${[...new Set(students.map((x) => x.r.classYear))].sort().map((c) => `<option ${c === classFilter ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>` : ""}
           <span class="badge ${gkey ? "st-Closed" : "st-Open"}">${gkey ? "✔ Answer key loaded" : "Answer key not loaded"}</span>
           ${gkey ? '<button class="btn" id="forgetKey" title="Remove the answer key from this browser (do this on shared computers)">Forget key</button>' : ""}
-          ${students.length ? `<button class="btn ${inbox().filter((x) => !answered(x)).length ? "btn-primary" : ""}" id="inboxBtn">📨 RFI inbox (${inbox().filter((x) => !answered(x)).length} to answer)</button>` : ""}
+          ${students.length || inbox().length || PT.rfiLive?.enabled() ? `<button class="btn ${inbox().filter((x) => !answered(x)).length ? "btn-primary" : ""}" id="inboxBtn">📨 RFI inbox (${inbox().filter((x) => !answered(x)).length} to answer)</button>` : ""}
           <button class="btn" id="csvBtn" ${students.length ? "" : "disabled"}>⤓ Export gradebook CSV</button>
           <button class="btn" id="clrBtn" ${students.length ? "" : "disabled"}>Clear files</button>
         </div></div>
@@ -265,14 +265,22 @@
   }
 
   /* ---------- RFI inbox: read apprentice RFIs, answer them, send the answers back ---------- */
-  const inbox = () => shown().flatMap(({ r }) => r.rfis.filter((x) => x.status !== "Draft").map((x) => ({ ...x, who: r.name })));
-  const answered = (x) => !!(rfiAnswers[x.id]?.answer || x.answer);
+  // RFIs from the loaded backup files + RFIs that arrived live (Firebase). The newest copy of each RFI wins.
+  const inbox = () => {
+    const byId = {};
+    const put = (x) => { const o = byId[x.id]; if (!o || String(x.updatedAt || x.createdAt || "") > String(o.updatedAt || o.createdAt || "")) byId[x.id] = x; };
+    for (const { r } of shown()) for (const x of r.rfis) if (x.status !== "Draft") put({ ...x, who: r.name });
+    if (PT.rfiLive) for (const x of PT.rfiLive.rfis()) if (x.status !== "Draft" && (!classFilter || x.classYear === classFilter)) put({ ...x, who: x.from || x.createdBy || "Apprentice", live: true });
+    return Object.values(byId);
+  };
+  const sentLive = (x) => PT.rfiLive?.sentAnswer(x.id);
+  const answered = (x) => !!(rfiAnswers[x.id]?.answer || x.answer || sentLive(x));
   function rfiCard(who, x) {
     const mine = rfiAnswers[x.id];
     const late = x.dueDate && x.dueDate < today() && !answered(x);
     return `<div class="card rfi-card ${toMe(x) ? "" : "muted-card"}">
       <div class="row gap" style="justify-content:space-between;flex-wrap:wrap"><b>${esc(who)} – RFI-${String(x.number).padStart(3, "0")}: ${esc(x.subject)}</b>
-        <span>${x.answer ? '<span class="badge st-Closed">Answered in their app</span>' : mine?.answer ? '<span class="badge st-InReview">Answer ready to send</span>' : `<span class="badge ${late ? "st-Open" : ""}">${esc(x.status)}${late ? " – OVERDUE" : ""}</span>`}</span></div>
+        <span>${x.live ? '<span class="badge">● live</span> ' : ""}${x.answer ? '<span class="badge st-Closed">Answered in their app</span>' : sentLive(x) && sentLive(x).answer === mine?.answer ? '<span class="badge st-Closed">Answer sent</span>' : mine?.answer ? '<span class="badge st-InReview">Answer ready to send</span>' : `<span class="badge ${late ? "st-Open" : ""}">${esc(x.status)}${late ? " – OVERDUE" : ""}</span>`}</span></div>
       <p class="small muted">To: <b>${esc(x.assignedTo || "—")}</b> · Sent ${fmtDate(x.sentDate || x.createdAt)} · Due ${fmtDate(x.dueDate) || "—"} · Sheets: ${esc(x.sheets || "—")} (${x.published} published markup${x.published === 1 ? "" : "s"}) · Cost impact: ${esc(x.costImpact)} · Schedule impact: ${esc(x.scheduleImpact)}${x.project ? ` · Project: ${esc(x.project)}` : ""}</p>
       <p><b>Question:</b><br>${esc(x.question).replace(/\n/g, "<br>")}</p>
       ${x.suggestion ? `<p><b>Suggested solution:</b><br>${esc(x.suggestion).replace(/\n/g, "<br>")}</p>` : ""}
@@ -288,6 +296,8 @@
       save(ANS_KEY, rfiAnswers);
     }));
   }
+  let inboxRedraw = null, liveTimer = null;
+  function onLive() { clearTimeout(liveTimer); liveTimer = setTimeout(() => { if (inboxRedraw) inboxRedraw(); else if (!document.querySelector(".modal-backdrop")) render(); }, 300); }
   function openInbox() {
     let filter = "me";
     const draw = (el) => {
@@ -297,10 +307,10 @@
     };
     const { el } = modal({
       title: "RFI inbox", wide: true, cancelLabel: "Close",
-      extraButtons: `<button type="button" class="btn btn-primary" id="dlAns">⤓ Download answers file</button>`,
-      body: `<p>RFIs your apprentices sent. Type an answer under each one – it's saved in this browser. When you're done, click
-        <b>Download answers file</b> and send that one file to the whole class (email, LMS, shared drive). Each apprentice opens
-        <b>RFIs → Import instructor answers</b> (or Settings → Import) and only <i>their</i> RFIs are updated to <b>Answered</b>.</p>
+      extraButtons: `${PT.rfiLive?.enabled() ? '<button type="button" class="btn btn-primary" id="sendAns">📤 Send answers now</button>' : ""}<button type="button" class="btn ${PT.rfiLive?.enabled() ? "" : "btn-primary"}" id="dlAns">⤓ Download answers file</button>`,
+      body: `${PT.rfiLive?.enabled() ? `<p class="small"><b>Live inbox: <span id="liveSt">${esc(PT.rfiLive.status())}</span></b> – RFIs apprentices send to you appear here by themselves (they need an internet connection). Type your answers, then <b>📤 Send answers now</b> – they show up in the apprentices' apps by themselves.</p>` : ""}
+        <p class="small muted">RFIs from backup files you dropped in show here too. No internet in class? <b>Download answers file</b> and send that one file to the whole class; each apprentice opens
+        <b>RFIs → Import instructor answers</b> and only <i>their</i> RFIs are updated to <b>Answered</b>.</p>
         <div class="row gap"><label class="inline">Answered by <input id="myName" value="${esc(myName)}" style="width:12em"></label>
         <label class="inline"><select id="inFilter"><option value="me">Sent to me</option><option value="all">All sent RFIs</option></select></label></div>
         <div id="inboxList"></div>`,
@@ -308,6 +318,13 @@
     $("#myName", el).onchange = (e) => { myName = e.target.value.trim() || "Juan Rodarte"; save("pt-instructor-name", myName); };
     $("#inFilter", el).onchange = (e) => { filter = e.target.value; draw(el); };
     $("#dlAns", el).onclick = () => downloadAnswers();
+    $("#sendAns", el) && ($("#sendAns", el).onclick = async () => {
+      const answers = Object.entries(rfiAnswers).filter(([id, a]) => a.answer && sentLive({ id })?.answer !== a.answer).map(([id, a]) => ({ id, answer: a.answer, answeredBy: a.by || myName, answeredAt: a.at }));
+      if (!answers.length) return toast(Object.keys(rfiAnswers).length ? "All your answers were already sent" : "Type at least one answer first", "warn");
+      try { await PT.rfiLive.sendAnswers(answers); toast(`Sent ${answers.length} answer${answers.length === 1 ? "" : "s"} – they appear in the apprentices' apps`, "ok"); draw(el); }
+      catch (e) { toast("Could not send (" + e.message + ") – use Download answers file instead", "warn"); }
+    });
+    inboxRedraw = () => { if (!document.body.contains(el)) { inboxRedraw = null; return; } const st = $("#liveSt", el); if (st) st.textContent = PT.rfiLive.status(); if (!el.contains(document.activeElement) || document.activeElement.tagName !== "TEXTAREA") draw(el); };
     draw(el);
     el.addEventListener("click", (e) => { if (e.target === el || e.target.closest("[data-close]")) setTimeout(render); });
   }
@@ -328,5 +345,5 @@
     download(`gradebook-${today()}.csv`, toCSV(rows), "text/csv");
   }
 
-  document.addEventListener("DOMContentLoaded", render);
+  document.addEventListener("DOMContentLoaded", () => { render(); PT.rfiLive && PT.rfiLive.startInstructor(onLive); });
 })();

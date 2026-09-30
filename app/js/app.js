@@ -100,6 +100,7 @@ PT.app = (() => {
     await store.init();
     renderChrome();
     PT.team.live.resume();
+    PT.rfiLive && PT.rfiLive.startApprentice();
     store.onChange(onStoreChange);
     window.addEventListener("hashchange", route);
     $("#searchForm").onsubmit = (e) => { e.preventDefault(); const q = $("#searchInput").value.trim(); if (q) { location.hash = "#/search/" + encodeURIComponent(q); store.event("search", { q: q.toLowerCase() }); } };

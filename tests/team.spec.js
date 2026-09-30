@@ -178,12 +178,13 @@ test("joining brings your earlier work into the team; leaving takes it out and h
 const FAKE_FIREBASE = `
 (() => {
   const listeners = [];
-  const col = (path) => ({
+  const col = (path, filt) => ({
     doc: (id) => ({ _path: path + "/" + id, collection: (c) => col(path + "/" + id + "/" + c) }),
+    where: (f, op, val) => col(path, (v) => v[f] === val),
     onSnapshot(cb) {
       let seen = {};
       const tick = async () => {
-        const all = await window.__relayGet(path);
+        const all = Object.fromEntries(Object.entries(await window.__relayGet(path)).filter(([, v]) => !filt || filt(v)));
         const ch = Object.entries(all).filter(([k, v]) => seen[k] !== v.at + v.by).map(([k, v]) => { seen[k] = v.at + v.by; return { type: "modified", doc: { data: () => v } }; });
         if (ch.length || !cb._first) { cb._first = true; cb({ docChanges: () => ch }); }
       };
@@ -220,5 +221,35 @@ test("live sync: a teammate's change shows up by itself", async ({ browser }) =>
   await expect.poll(() => S(B, () => PT.store.list("rfis").map((r) => r.subject)), { timeout: 10000 }).toContain("Live RFI from Mateo");
   await S(B, () => PT.store.add("reports", { type: "Daily Report", date: "2026-10-07", status: "Submitted", createdBy: "Luis Herrera", workPerformed: "Live report", crew: [] }));
   await expect.poll(() => S(A, () => PT.store.list("reports").some((r) => r.workPerformed === "Live report")), { timeout: 10000 }).toBe(true);
+  expect(errs).toEqual([]);
+});
+
+test("RFIs sent to the instructor arrive in the dashboard inbox live, and answers go back by themselves", async ({ browser }) => {
+  const cloud = {};
+  const mk = async () => {
+    const ctx = await browser.newContext({ acceptDownloads: true });
+    await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/"))));
+    await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) cloud[k] = v; });
+    await ctx.route("**/js/cloud-config.js", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
+    await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
+    return ctx.newPage();
+  };
+  const A = await mk(), T = await mk();
+  const errs = []; for (const p of [A, T]) p.on("pageerror", (e) => errs.push(e.message));
+  await fresh(A, "Luis Herrera");
+  await S(A, () => PT.store.add("rfis", { number: PT.store.nextNumber("rfis"), subject: "Curb height at RTU-4", question: "Curb is 8 in. – can we raise it to 14 in.?", assignedTo: "Juan Rodarte", status: "Open", sentDate: "2026-10-06", dueDate: "2026-10-09", sheetIds: [], createdBy: "Luis Herrera" }));
+  await S(A, () => PT.store.add("rfis", { number: PT.store.nextNumber("rfis"), subject: "Draft not sent", question: "q", assignedTo: "Juan Rodarte", status: "Draft", sheetIds: [], createdBy: "Luis Herrera" }));
+  await expect.poll(() => Object.keys(cloud).filter((k) => k.includes("rfi__")).length, { timeout: 10000 }).toBe(1);
+  // instructor opens the dashboard with NO files – the RFI is there
+  await T.goto("/instructor.html");
+  await expect(T.locator("#inboxBtn")).toContainText("1 to answer", { timeout: 10000 });
+  await T.click("#inboxBtn");
+  await expect(T.locator(".modal")).toContainText("Luis Herrera – RFI-002: Curb height at RTU-4");
+  await expect(T.locator(".modal")).not.toContainText("Draft not sent");
+  await T.fill(".modal textarea[data-ans]", "Yes – raise the curb to 14 in. per 4/A501.");
+  await T.click("#sendAns");
+  await expect(T.locator(".modal")).toContainText("Answer sent");
+  // the apprentice gets the answer by itself
+  await expect.poll(() => S(A, () => { const r = PT.store.list("rfis").find((x) => x.subject.startsWith("Curb")); return r.status + "|" + r.answer; }), { timeout: 10000 }).toBe("Answered|Yes – raise the curb to 14 in. per 4/A501.");
   expect(errs).toEqual([]);
 });

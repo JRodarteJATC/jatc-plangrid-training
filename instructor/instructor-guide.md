@@ -127,15 +127,20 @@ joins, their earlier tasks, punch items, RFIs and daily reports are copied into 
 removed has their work moved to their own project (“<team> – my work”) and hidden from the team; they are graded on
 **their own** work only and the team's score no longer includes it.
 
-**Answering their RFIs (RFI inbox):**
-1. Drop the apprentices' backup files into the Instructor Dashboard.
-2. Click **📨 RFI inbox** (top right – it shows how many are waiting). Every RFI sent to Juan Rodarte is listed
-   with the question, suggested solution, sheets, sent/due dates and cost/schedule impact. Overdue ones are flagged.
-   (Also in each apprentice's detail view.)
-3. Type your answer under each RFI – it's saved in that browser as you type.
-4. Click **⤓ Download answers file** and send that **one file to the whole class** (email, LMS, shared drive).
-5. Apprentices open **RFIs → ⤒ Import instructor answers** (or Settings → Import). Only their own RFIs are
-   updated to **Answered** with your answer, name and date. You can answer more later and send a new file.
+**Answering their RFIs (RFI inbox) – live:**
+1. Open the **Instructor Dashboard** – no files needed. RFIs apprentices send to Juan Rodarte (status Open, not
+   Draft) arrive in **📨 RFI inbox** by themselves within a few seconds, while their device is online.
+   The button shows how many are waiting; each live RFI has a **● live** tag. Overdue ones are flagged.
+2. Type your answer under each RFI – it's saved in that browser as you type.
+3. Click **📤 Send answers now**. The answer appears in the apprentice's app by itself (status → **Answered**).
+
+**No internet in class?** Drop the apprentices' backup files into the dashboard – their RFIs show in the same inbox.
+Type answers, click **⤓ Download answers file** and send that one file to the class; apprentices open
+**RFIs → ⤒ Import instructor answers**. Only their own RFIs are updated.
+
+**Not seeing an RFI?** Check that the apprentice (1) set their name in Settings, (2) put **Juan Rodarte** in
+*Assigned to*, (3) saved it as **Open** – a **Draft** is not sent, and (4) had internet. Their app shows
+"RFI sent to your instructor's inbox" when it goes through.
 
 To see their markups on the plans, use **Open full project in app** in the apprentice's detail view (on your
 own computer – it replaces the project stored in that browser).
