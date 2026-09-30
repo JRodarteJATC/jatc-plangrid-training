@@ -91,10 +91,12 @@ PT.rfiLive = (() => {
         }
         const { col: c, rest } = await col();
         const takeAnswers = (docs) => {
-          const ids = new Set((store.get().rfis || []).flatMap((r) => [r.id, r.copiedFrom].filter(Boolean)));
+          // only this apprentice's own RFIs – teammates get theirs on their own devices (avoids devices fighting over answers)
+          const meNow = store.get().user?.name;
+          const ids = new Set((store.get().rfis || []).filter((r) => r.createdBy === meNow).flatMap((r) => [r.id, r.copiedFrom].filter(Boolean)));
           const answers = docs.map((doc) => { try { return JSON.parse(doc.data().data); } catch { return null; } }).filter((a) => a && ids.has(a.id));
           if (!answers.length) return;
-          const n = store.applyRfiAnswers({ type: "plan-trainer-rfi-answers", from: "Instructor", answers });
+          const n = store.applyRfiAnswers({ type: "plan-trainer-rfi-answers", from: "Instructor", answers, onlyBy: meNow });
           if (n) PT.util.toast(`${n} RFI answer${n === 1 ? "" : "s"} from your instructor – see RFIs`, "ok");
         };
         if (!listening) {

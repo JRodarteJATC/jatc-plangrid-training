@@ -222,7 +222,7 @@ PT.store = (() => {
     const best = new Map();
     for (const a of obj.answers || []) {
       if (!a?.answer) continue;
-      for (const r of state.rfis.filter((x) => x.id === a.id || (x.copiedFrom && x.copiedFrom === a.id))) {
+      for (const r of state.rfis.filter((x) => (x.id === a.id || (x.copiedFrom && x.copiedFrom === a.id)) && (!obj.onlyBy || x.createdBy === obj.onlyBy))) {
         const cur = best.get(r);
         if (!cur || String(a.answeredAt || "") > String(cur.answeredAt || "")) best.set(r, a);
       }

@@ -28,6 +28,7 @@ PT.team = (() => {
   function afterTeamChange(pid) {
     const r = store.teamCheck(pid); if (!r) return r;
     if (r.joined && r.what) toast(`Copied your work into the team from “${r.from}”: ${r.what}. “${r.from}” still has it – switch projects with the menu at the top.`, "ok");
+    if (r.left && live.isOn(pid)) setTimeout(() => { if (live.isOn(pid)) live.toggle(pid).catch(() => {}); }, 8000); // stop live-syncing a team you're no longer on (after your leave has gone out)
     if (r.left) toast(`You're off the team – you're back in “${r.to}”${r.what ? ` with the work you did in the team (${r.what})` : ""}. Everything you had before joining is still there.`, "ok");
     PT.app.renderChrome && PT.app.renderChrome();
     return r;
@@ -232,7 +233,14 @@ PT.team = (() => {
         try { on()[pid] = true; store.emit(); await connect(pid); toast("Live sync on – your teammates' changes will appear by themselves", "ok"); }
         catch (e) { delete on()[pid]; store.emit(); toast(e.message, "warn"); }
       },
-      async resume() { if (!cfg()) return; for (const pid of Object.keys(on())) connect(pid).catch((e) => toast("Live sync: " + e.message, "warn")); },
+      async resume() {
+        if (!cfg()) return;
+        for (const pid of Object.keys(on())) {
+          const p = store.get().projects.find((x) => x.id === pid);
+          if (p?.team && !p.team.members.includes(me()) && p.team.memberLog?.[me()]?.in === false) { delete on()[pid]; continue; } // not on that team any more
+          connect(pid).catch((e) => toast("Live sync: " + e.message, "warn"));
+        }
+      },
     };
   })();
 
