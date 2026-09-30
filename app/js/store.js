@@ -217,20 +217,30 @@ PT.store = (() => {
   function applyRfiAnswers(obj) {
     if (!obj || obj.type !== "plan-trainer-rfi-answers") throw new Error("Not an RFI answers file");
     let n = 0;
+    // one answer per RFI: an RFI copied between projects can match two answers (its own id and the original id) –
+    // always use the newest one, and never go back to an older answer (that caused endless "answers received" messages)
+    const best = new Map();
     for (const a of obj.answers || []) {
-      for (const r of state.rfis.filter((x) => x.id === a.id || x.copiedFrom === a.id)) {
-      if (!a.answer || r.answer === a.answer) continue;
+      if (!a?.answer) continue;
+      for (const r of state.rfis.filter((x) => x.id === a.id || (x.copiedFrom && x.copiedFrom === a.id))) {
+        const cur = best.get(r);
+        if (!cur || String(a.answeredAt || "") > String(cur.answeredAt || "")) best.set(r, a);
+      }
+    }
+    for (const [r, a] of best) {
+      if (r.answer === a.answer) continue;
+      if (r.answeredAt && a.answeredAt && String(r.answeredAt) > String(a.answeredAt) && r.answeredBy && r.answeredBy !== r.createdBy) continue;
       const prev = r.status;
       Object.assign(r, { answer: a.answer, answeredBy: a.answeredBy || obj.from || "Instructor", answeredAt: a.answeredAt || nowIso(), status: ["Draft", "Open"].includes(prev) ? "Answered" : prev, updatedAt: nowIso() });
       (r.history = r.history || []).push({ at: a.answeredAt || nowIso(), text: `${r.answeredBy}: answered${prev !== r.status ? ` (${prev} → ${r.status})` : ""}` });
       state.activity.unshift({ id: uid("act"), projectId: r.projectId, at: nowIso(), by: r.answeredBy, text: `Answered RFI-${r.number}: ${r.subject}` });
       state.events.push({ at: nowIso(), projectId: r.projectId, type: "rfi_answer_received", id: r.id });
       n++;
-      }
     }
-    emit();
+    if (n) emit();
     return n;
   }
+
 
   /* ================= TEAM PROJECTS (share & merge, live sync) =================
      A team project is a normal project with project.team = { members: [...], sections: {...} }.

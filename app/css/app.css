@@ -217,3 +217,5 @@ dl.info { display: grid; grid-template-columns: 80px 1fr; gap: 6px; margin: 0 0 
 
 .note-made-up { background: #fff7e0; border: 1px solid #f0d27a; color: #6b5200; padding: 6px 10px; border-radius: 8px; font-size: .85rem; margin: 6px 0 10px; }
 .roster-no { display: inline-block; min-width: 2.2em; background: var(--navy); color: #fff; border-radius: 6px; padding: 0 6px; font-size: .8rem; text-align: center; margin-right: 2px; }
+
+.answer-box { background: #eef6ee; border-left: 4px solid #2e9e44; padding: 8px 10px; margin: 4px 0 0; white-space: pre-wrap; }

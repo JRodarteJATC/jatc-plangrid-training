@@ -365,7 +365,10 @@ PT.views = (() => {
   function rfiForm(rfi) {
     const isNew = !rfi;
     const r = rfi || { subject: "", question: "", suggestion: "", status: "Draft", assignedTo: "", dueDate: "", costImpact: "Unknown", scheduleImpact: "Unknown", sheetIds: [], answer: "" };
-    const canAnswer = !isNew && (r.status === "Open" || r.status === "Answered");
+    // RFIs sent to the instructor are answered ONLY by the instructor (Instructor Dashboard) – apprentices can't write the answer.
+    const toInstr = /rodarte|instructor/i.test(r.assignedTo || "") || (store.list("team").find((t) => t.name === r.assignedTo)?.role === "Instructor");
+    const canAnswer = !isNew && !toInstr && (r.status === "Open" || r.status === "Answered");
+    const statusChoices = toInstr && !r.answer ? RFI_STATUS.filter((s) => s !== "Answered") : RFI_STATUS;
     const { el } = modal({
       title: isNew ? "New RFI" : `RFI-${String(r.number).padStart(3, "0")}: ${r.subject}`, wide: true, submitLabel: "Save",
       extraButtons: isNew ? `<button type="button" class="btn" id="sendNow">Save & Send (Open)</button>` :
@@ -383,8 +386,9 @@ PT.views = (() => {
           <label>Cost impact <select name="costImpact">${options(["Unknown", "Yes", "No"], r.costImpact)}</select></label>
           <label>Schedule impact <select name="scheduleImpact">${options(["Unknown", "Yes", "No"], r.scheduleImpact)}</select></label>
           <label class="span2">Referenced sheets <select name="sheetIds" multiple size="4">${sheetsSorted().map((s) => `<option value="${s.id}" ${(r.sheetIds || []).includes(s.id) ? "selected" : ""}>${esc(s.number)} – ${esc(s.title)}</option>`).join("")}</select></label>
-          ${!isNew ? `<label>Status <select name="status">${options(RFI_STATUS, r.status)}</select></label>` : ""}
-          ${canAnswer || r.answer ? `<label class="span2">Official answer <textarea name="answer" rows="3" placeholder="Reviewer's response">${esc(r.answer || "")}</textarea></label>` : ""}
+          ${!isNew ? `<label>Status <select name="status">${options(statusChoices, r.status)}</select></label>` : ""}
+          ${toInstr && !isNew ? (r.answer ? `<div class="span2"><b>Official answer</b> <span class="muted small">(from ${esc(r.answeredBy || r.assignedTo)}${r.answeredAt ? ", " + fmtDateTime(r.answeredAt) : ""})</span><p class="answer-box">${esc(r.answer)}</p></div>` : `<p class="muted small span2">Waiting for ${esc(r.assignedTo)} to answer – the answer appears here by itself.</p>`)
+            : canAnswer || r.answer ? `<label class="span2">Official answer <textarea name="answer" rows="3" placeholder="Reviewer's response">${esc(r.answer || "")}</textarea></label>` : ""}
         </div>
         ${!isNew ? `<h3>History</h3><ul class="comments">${(r.history || []).map((x) => `<li><span class="muted">${fmtDateTime(x.at)}</span> ${esc(x.text)}</li>`).join("") || "<li class='muted'>—</li>"}</ul>` : ""}`,
       onSubmit: (f, form) => saveRfi(r, f, isNew, form._action),
@@ -402,7 +406,9 @@ PT.views = (() => {
     if (f.sentDate !== undefined) data.sentDate = f.sentDate;
     if (status !== "Draft" && !(data.sentDate || r.sentDate)) data.sentDate = today();
     if (action === "close") status = "Closed";
-    if (f.answer !== undefined) data.answer = f.answer;
+    const toInstr = /rodarte|instructor/i.test(f.assignedTo || r.assignedTo || "");
+    if (f.answer !== undefined && !(toInstr && !isNew)) data.answer = f.answer;
+    if (toInstr && !r.answer && status === "Answered") status = r.status === "Answered" ? "Open" : r.status || "Open"; // only the instructor's answer makes it Answered
     if (data.answer && status === "Open") status = "Answered";
     const hist = (txt) => ({ at: new Date().toISOString(), text: `${store.get().user.name}: ${txt}` });
     if (isNew) {

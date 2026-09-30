@@ -402,3 +402,24 @@ test("practice plans load in one tap as their own project, with a practice exerc
   expect(await page.evaluate(() => PT.store.get().sheets.filter((s) => (s.tags || []).includes("Practice set")).length)).toBe(11);
   expect(page.errors).toEqual([]);
 });
+
+test("apprentices can't answer RFIs sent to the instructor; duplicate answers don't repeat", async ({ page }) => {
+  await page.goto("/#/settings"); await page.fill("#prof input[name=name]", "Luis Herrera"); await page.click("#prof button.btn-primary");
+  await page.goto("/#/rfis"); await page.click("#newBtn");
+  await page.fill(".modal input[name=subject]", "Curb height"); await page.fill(".modal textarea[name=question]", "Is 8 in. enough at RTU-4?");
+  await page.selectOption(".modal select[name=assignedTo]", "Juan Rodarte"); await page.click("#sendNow");
+  const id = await page.evaluate(() => PT.store.list("rfis").find((r) => r.subject === "Curb height").id);
+  await page.click(`tr[data-id="${id}"]`);
+  await expect(page.locator(".modal textarea[name=answer]")).toHaveCount(0);
+  expect(await page.locator(".modal select[name=status] option").allTextContents()).not.toContain("Answered");
+  await expect(page.locator(".modal")).toContainText("Waiting for Juan Rodarte");
+  await page.selectOption(".modal select[name=status]", "Open"); await page.click(".modal button[type=submit]");
+  // the same RFI copied into a team gets two answers (own id + original id): newest wins, applied once
+  await page.evaluate((id) => { const r = PT.store.find("rfis", id); PT.store.get().rfis.push({ ...r, id: "copy1", copiedFrom: id }); }, id);
+  const ans = (id2) => ({ type: "plan-trainer-rfi-answers", answers: [{ id, answer: "Raise to 14 in.", answeredBy: "Juan Rodarte", answeredAt: "2026-10-01T10:00:00Z" }, { id: "copy1", answer: "old", answeredBy: "Juan Rodarte", answeredAt: "2026-09-30T10:00:00Z" }] });
+  const n1 = await page.evaluate((a) => PT.store.applyRfiAnswers(a), ans());
+  const n2 = await page.evaluate((a) => PT.store.applyRfiAnswers(a), ans());
+  expect(n1).toBe(2); expect(n2).toBe(0);
+  expect(await page.evaluate(() => PT.store.get().rfis.filter((r) => r.subject === "Curb height").map((r) => r.status + ":" + r.answer))).toEqual(["Answered:Raise to 14 in.", "Answered:Raise to 14 in."]);
+  expect(page.errors).toEqual([]);
+});

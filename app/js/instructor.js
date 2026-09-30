@@ -274,13 +274,15 @@
     return Object.values(byId);
   };
   const sentLive = (x) => PT.rfiLive?.sentAnswer(x.id);
-  const answered = (x) => !!(rfiAnswers[x.id]?.answer || x.answer || sentLive(x));
+  // an answer typed by the apprentice themselves doesn't count – only the instructor's
+  const realAnswer = (x) => !!x.answer && (/rodarte|instructor/i.test(x.answeredBy || "") || x.answeredBy === myName);
+  const answered = (x) => !!(rfiAnswers[x.id]?.answer || realAnswer(x) || sentLive(x));
   function rfiCard(who, x) {
     const mine = rfiAnswers[x.id];
     const late = x.dueDate && x.dueDate < today() && !answered(x);
     return `<div class="card rfi-card ${toMe(x) ? "" : "muted-card"}">
       <div class="row gap" style="justify-content:space-between;flex-wrap:wrap"><b>${esc(who)} – RFI-${String(x.number).padStart(3, "0")}: ${esc(x.subject)}</b>
-        <span>${x.live ? '<span class="badge">● live</span> ' : ""}${x.answer ? '<span class="badge st-Closed">Answered in their app</span>' : sentLive(x) && sentLive(x).answer === mine?.answer ? '<span class="badge st-Closed">Answer sent</span>' : mine?.answer ? '<span class="badge st-InReview">Answer ready to send</span>' : `<span class="badge ${late ? "st-Open" : ""}">${esc(x.status)}${late ? " – OVERDUE" : ""}</span>`}</span></div>
+        <span>${x.live ? '<span class="badge">● live</span> ' : ""}${realAnswer(x) ? '<span class="badge st-Closed">Answered in their app</span>' : sentLive(x) && sentLive(x).answer === mine?.answer ? '<span class="badge st-Closed">Answer sent</span>' : mine?.answer ? '<span class="badge st-InReview">Answer ready to send</span>' : `<span class="badge ${late ? "st-Open" : ""}">${esc(x.status)}${late ? " – OVERDUE" : ""}</span>`}</span></div>
       <p class="small muted">To: <b>${esc(x.assignedTo || "—")}</b> · Sent ${fmtDate(x.sentDate || x.createdAt)} · Due ${fmtDate(x.dueDate) || "—"} · Sheets: ${esc(x.sheets || "—")} (${x.published} published markup${x.published === 1 ? "" : "s"}) · Cost impact: ${esc(x.costImpact)} · Schedule impact: ${esc(x.scheduleImpact)}${x.project ? ` · Project: ${esc(x.project)}` : ""}</p>
       <p><b>Question:</b><br>${esc(x.question).replace(/\n/g, "<br>")}</p>
       ${x.suggestion ? `<p><b>Suggested solution:</b><br>${esc(x.suggestion).replace(/\n/g, "<br>")}</p>` : ""}
