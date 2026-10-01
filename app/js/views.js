@@ -117,22 +117,71 @@ PT.views = (() => {
     practiceBusy = true;
     try {
       toast("Downloading the practice plans (about 9 MB) – this can take a minute…");
-      const res = await fetch(PRACTICE.url);
-      if (!res.ok) throw new Error("Could not download the practice plans (" + res.status + "). Ask your instructor for the PDF and use Upload.");
-      const pages = await fileToPages(new File([await res.blob()], "practice-plans.pdf", { type: "application/pdf" }));
-      const p = target || store.newProject(PRACTICE.name, PRACTICE.number, PRACTICE.address);
-      if (!p.team) p.practicePlans = true;
-      s.activeProjectId = p.id;
-      pages.forEach((pg, i) => {
-        const [number, title, discipline] = PRACTICE.sheets[i] || [pg.guess || `P-${i + 1}`, pg.name, "Roofing"];
-        // same ids on every device, so teammates who each load the plans get the same sheets when they sync
-        store.add("sheets", { id: `pp-${p.id}-${number}`, projectId: p.id, number, title, discipline, tags: ["Practice set"], current: 0,
-          versions: [{ id: `ppv-${p.id}-${number}`, rev: "0", set: "Bid Set", date: today(), src: { kind: "image", dataUrl: pg.dataUrl }, w: pg.w, h: pg.h, ppi: pg.ppi || null, scalePxPerFt: null, links: [] }] });
-      });
-      store.log(`Loaded practice plans (${pages.length} sheets)`); store.event("upload_sheet", { count: pages.length, practice: true }); store.emit();
-      PT.app.renderChrome(); location.hash = "#/sheets"; PT.app.route && PT.app.route();
-      toast(`Practice plans loaded – ${pages.length} sheets. Calibrate with each sheet's graphic scale bar before measuring.`, "ok");
-    } catch (e) { toast(e.message, "warn"); } finally { practiceBusy = false; }
+      const blob = await downloadPractice();
+      await addPracticePages(new File([blob], "practice-plans.pdf", { type: "application/pdf" }), target);
+    } catch (e) {
+      console.warn("practice plans", e);
+      practiceFallback(e, target);
+    } finally { practiceBusy = false; }
+  }
+
+  // The posted copy on GitHub Pages – used when the app is opened from a file, a different site, or the first try drops.
+  const PRACTICE_ABS = "https://jrodartejatc.github.io/jatc-plangrid-training/plans/jatc-training-center-practice-plans.pdf";
+  async function downloadPractice() {
+    const urls = [];
+    try { if (location.protocol !== "file:") urls.push(new URL(PRACTICE.url, location.href).href); } catch { }
+    urls.push(PRACTICE_ABS, PRACTICE_ABS + "?t=" + Date.now());
+    let last;
+    for (const u of [...new Set(urls)]) {
+      try {
+        const res = await fetch(u, { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const blob = await res.blob();
+        if (blob.size < 100000) throw new Error("download was cut short");
+        return blob;
+      } catch (e) { last = e; console.warn("practice plans download failed:", u, e); }
+    }
+    throw last || new Error("download failed");
+  }
+
+  async function addPracticePages(file, target) {
+    const s = store.get();
+    const pages = await fileToPages(file);
+    const p = target || store.newProject(PRACTICE.name, PRACTICE.number, PRACTICE.address);
+    if (!p.team) p.practicePlans = true;
+    s.activeProjectId = p.id;
+    pages.forEach((pg, i) => {
+      const [number, title, discipline] = PRACTICE.sheets[i] || [pg.guess || `P-${i + 1}`, pg.name, "Roofing"];
+      // same ids on every device, so teammates who each load the plans get the same sheets when they sync
+      store.add("sheets", { id: `pp-${p.id}-${number}`, projectId: p.id, number, title, discipline, tags: ["Practice set"], current: 0,
+        versions: [{ id: `ppv-${p.id}-${number}`, rev: "0", set: "Bid Set", date: today(), src: { kind: "image", dataUrl: pg.dataUrl }, w: pg.w, h: pg.h, ppi: pg.ppi || null, scalePxPerFt: null, links: [] }] });
+    });
+    store.log(`Loaded practice plans (${pages.length} sheets)`); store.event("upload_sheet", { count: pages.length, practice: true }); store.emit();
+    PT.app.renderChrome(); location.hash = "#/sheets"; PT.app.route && PT.app.route();
+    toast(`Practice plans loaded – ${pages.length} sheets. Calibrate with each sheet's graphic scale bar before measuring.`, "ok");
+  }
+
+  // Download didn't work (Wi-Fi blocked it, connection dropped…): let them save the PDF with the browser and pick it.
+  function practiceFallback(err, target) {
+    const pdfErr = /PDF library/.test((err && err.message) || "");
+    const { el } = modal({ title: "Practice plans didn't download", cancelLabel: "Close",
+      body: `<p>${pdfErr ? esc(err.message) : "The download was blocked or the connection dropped (" + esc((err && err.message) || "error") + ")."}</p>
+        <p>Tap <b>Try again</b> first – on school or jobsite Wi-Fi a second try often works. If it still fails, do it in two steps:</p>
+        <ol><li><a class="btn" href="${PRACTICE_ABS}" target="_blank" rel="noopener" download="JATC Practice Plans.pdf">Open / save the PDF</a> (about 9 MB – wait until it finishes)</li>
+        <li style="margin-top:8px"><button type="button" class="btn btn-primary" id="ppPick">Choose the saved PDF</button></li></ol>`,
+      extraButtons: `<button type="button" class="btn" id="ppRetry">Try again</button>` });
+    el.classList.add("pp-fallback");
+    $("#ppRetry", el).onclick = () => { el.remove(); loadPracticePlans(); };
+    $("#ppPick", el).onclick = () => {
+      const inp = h(`<input type="file" accept="application/pdf" hidden>`); document.body.appendChild(inp);
+      inp.onchange = async () => {
+        const f = inp.files[0]; inp.remove(); if (!f) return;
+        el.remove(); practiceBusy = true;
+        try { toast("Reading the practice plans…"); await addPracticePages(f, target); }
+        catch (e) { toast(e.message, "warn"); } finally { practiceBusy = false; }
+      };
+      inp.click();
+    };
   }
 
   let pdfjsPromise = null;

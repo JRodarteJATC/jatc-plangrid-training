@@ -423,3 +423,16 @@ test("apprentices can't answer RFIs sent to the instructor; duplicate answers do
   expect(await page.evaluate(() => PT.store.get().rfis.filter((r) => r.subject === "Curb height").map((r) => r.status + ":" + r.answer))).toEqual(["Answered:Raise to 14 in.", "Answered:Raise to 14 in."]);
   expect(page.errors).toEqual([]);
 });
+
+test("practice plans: if the download is blocked, the app explains and lets you pick the saved PDF", async ({ page }) => {
+  test.setTimeout(180000);
+  await page.route(/jatc-training-center-practice-plans\.pdf/, (r) => r.abort("failed"));
+  await page.goto("/#/sheets");
+  await page.click("#ppBtn");
+  await expect(page.locator(".pp-fallback")).toBeVisible({ timeout: 30000 });
+  await expect(page.locator(".pp-fallback")).toContainText("Choose the saved PDF");
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.click("#ppPick")]);
+  await chooser.setFiles(require("path").join(__dirname, "..", "app", "plans", "jatc-training-center-practice-plans.pdf"));
+  await expect.poll(() => page.evaluate(() => PT.store.list("sheets").length), { timeout: 150000 }).toBe(11);
+  expect(page.errors.filter((e) => !/Failed to fetch|ERR_FAILED/.test(e))).toEqual([]);
+});
