@@ -225,7 +225,7 @@ test("3A project: daily report logs, time sheet, task watchers and RFI sent date
       S.add("reports", { type: "Daily Report", date, status: "Submitted", createdBy: me, crew: [{ trade: "JW", count: "3" }], workPerformed: "Installed tapered insulation and cover board, Area B grid 5-8.", materials: [{ material: "Polyiso", qty: "20" }], equipmentLog: [{ name: "Hoist" }], notes: "Wind picked up after lunch; covered stock and tied down.", photoIds: d < 4 ? [ph] : [] });
       S.add("reports", { type: "Time Sheet", date, status: "Submitted", createdBy: me, workers: [{ name: me, classification: "Apprentice", hours: 8 }] });
     }
-    const first = S.list("reports").find((r) => r.type === "Daily Report" && r.createdBy === me && !r.date.startsWith("2026-10-0"));
+    const first = S.list("reports").find((r) => r.type === "Daily Report" && r.createdBy === me && !["2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"].includes(r.date));
     const ts = S.list("reports").find((r) => r.type === "Time Sheet" && r.createdBy === me && r.date === first.date); ts.workers[0].classification = "Apprentice";
     S.add("docs", { name: "Cap sheet data.pdf", folder: "Materials", kind: "pdf", uploadedBy: me });
     S.add("docs", { name: "Primer SDS.pdf", folder: "Materials", kind: "pdf", uploadedBy: me });

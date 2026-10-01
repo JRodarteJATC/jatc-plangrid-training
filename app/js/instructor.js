@@ -124,6 +124,26 @@
   }
 
   /* ---------- files ---------- */
+  function addState(data, label) {
+    const key = (data.user?.name || label).trim().toLowerCase();
+    const rec = { key, file: label, state: data };
+    const i = students.findIndex((s) => s.key === key);
+    if (i >= 0) students[i] = rec; else students.push(rec);
+  }
+  // apprentices who used "📤 Turn in" – no files needed
+  async function loadTurnIns() {
+    const b = $("#cloudBtn"); if (b) { b.disabled = true; b.textContent = "Loading turned-in work…"; }
+    try {
+      const subs = await PT.rfiLive.turnIns();
+      let n = 0;
+      for (const sub of subs) {
+        if (classFilter && sub.classYear && sub.classYear !== classFilter) continue;
+        try { addState(await PT.rfiLive.fetchTurnIn(sub), `turned in ${fmtDateTime(sub.at)}`); n++; } catch (e) { toast(e.message, "warn"); }
+      }
+      regrade();
+      toast(n ? `Loaded ${n} turned-in apprentice${n === 1 ? "" : "s"}` : "Nobody has turned in online yet", n ? "ok" : "warn");
+    } catch (e) { toast("Couldn't load turned-in work (" + e.message + ")", "warn"); render(); }
+  }
   async function addFiles(files) {
     let added = 0;
     for (const f of files) {
@@ -131,10 +151,7 @@
         const data = JSON.parse(await f.text());
         if (data && data.type === "plan-trainer-grading-key") { gkey = data; save(KEY_KEY, data); toast("Answer key loaded", "ok"); continue; }
         if (!data || !data.projects || !data.sheets) throw new Error("not a Plan Room Trainer backup");
-        const key = (data.user?.name || f.name).trim().toLowerCase();
-        const rec = { key, file: f.name, state: data };
-        const i = students.findIndex((s) => s.key === key);
-        if (i >= 0) students[i] = rec; else students.push(rec);
+        addState(data, f.name);
         added++;
       } catch (e) { toast(`${f.name}: ${e.message}`, "warn"); }
     }
@@ -179,10 +196,12 @@
         </div></div>
       <div class="drop" id="drop">
         <p><b>Drag & drop files here</b> – every apprentice's backup <code>.json</code>, plus <code>grading-key.json</code> from the private instructor repo. <b>Grade on your own computer only</b> – the key stays in this browser until you click <i>Forget key</i>.</p>
-        <button class="btn btn-primary" id="pickBtn">Choose files…</button>
+        ${PT.rfiLive?.enabled() ? `<button class="btn btn-primary" id="cloudBtn">☁ Load turned-in work</button> ` : ""}<button class="btn ${PT.rfiLive?.enabled() ? "" : "btn-primary"}" id="pickBtn">Choose files…</button>
+        ${PT.rfiLive?.enabled() ? `<p class="small">Apprentices tap <b>Settings → 📤 Turn in</b> (it also happens by itself when they submit a quiz). Click <b>☁ Load turned-in work</b> to grade everyone – no files needed. Still drop <code>grading-key.json</code> here once.</p>` : ""}
         <p class="muted small">Read in this browser only – nothing is uploaded. Overrides and notes you type are saved in this browser; export the CSV for a permanent copy.</p>
       </div>
       ${students.length ? table() : howTo()}`;
+    $("#cloudBtn") && ($("#cloudBtn").onclick = loadTurnIns);
     $("#pickBtn").onclick = () => { const inp = h(`<input type="file" accept=".json,application/json" multiple hidden>`); document.body.appendChild(inp); inp.onchange = () => { addFiles([...inp.files]); inp.remove(); }; inp.click(); };
     const drop = $("#drop");
     drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };

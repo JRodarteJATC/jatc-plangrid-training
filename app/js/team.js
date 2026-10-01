@@ -70,38 +70,85 @@ PT.team = (() => {
     const roster = PT.roster.APPRENTICES.filter((a) => a.name !== me());
     modal({
       title: "Start a team project", wide: true, submitLabel: "Start team project",
-      body: `<p>Pick your teammates (2–${MAX} people counting you). You'll get a <b>team file</b> to send them – they open it with <b>Join / sync</b>.</p>
-        <label>Team name <input name="name" required data-label="Team name" placeholder="e.g. Team 2 – Sierra Summit" value="3A PlanGrid Project – Team"></label>
+      body: `<p>Pick your teammates (2–${MAX} people counting you). ${live.available() ? "They get an <b>invite</b> in their app (Team Project page) – no file needed." : "You'll get a <b>team file</b> to send them – they open it with <b>Join / sync</b>."}</p>
+        <label>Your team's company name <b style="color:#c0392b">*</b> <input name="company" list="tmCo" required data-label="Company name" placeholder="Pick or type your roofing company"></label>
+        <datalist id="tmCo">${PT.roster.COMPANIES.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
+        <p class="muted small">Every team works as a roofing company. The company name is your team's name (one company per team).</p>
         <b>Teammates</b><div class="watch-grid">${roster.map((a) => `<label class="check"><input type="checkbox" name="m" value="${esc(a.name)}"> #${a.no} ${esc(a.name)}</label>`).join("")}</div>
         <label style="margin-top:10px">Other teammate (not on the list) <input name="other" placeholder="Full name"></label>
         <label>Drawings <select name="src"><option value="samples">Start with the sample drawings (Bldg B) – recommended</option><option value="blank">Blank – we'll upload our own plans</option></select></label>
         <p class="muted small">Uploaded plans make the team file bigger. If you use your own plans, have <b>one</b> person upload them and send the team file right away.</p>`,
       onSubmit: (f) => {
         if (me() === "Apprentice") { toast("Set your name first: Settings → Your profile", "warn"); return false; }
+        const company = (f.company || "").trim();
+        if (company.length < 3) { toast("Choose your team's company name", "warn"); return false; }
+        const taken = store.get().projects.some((p) => p.team && p.name.toLowerCase() === company.toLowerCase());
+        if (taken) { toast("You already have a team with that company name – pick another", "warn"); return false; }
+        f.name = company;
         const members = [...[].concat(f.m || []), ...(f.other ? [f.other.trim()] : [])];
         if (members.length < 1) { toast("Pick at least one teammate", "warn"); return false; }
         if (members.length + 1 > MAX) { toast(`A team is 2–${MAX} people`, "warn"); return false; }
         const p = store.newTeamProject({ name: f.name.trim(), members, withSamples: f.src === "samples" });
-        p.team.code = code(); p.updatedAt = new Date().toISOString(); store.emit();
+        p.team.code = code(); p.team.company = company; p.updatedAt = new Date().toISOString(); store.emit();
         afterTeamChange(p.id);
         if (live.available()) live.toggle(p.id).catch(() => {}); // live sync on by default – teammates and the instructor see the work
-        toast("Team project started – now send your team file to your teammates", "ok");
+        toast(live.available() ? "Team started – your teammates get an invite on their Team Project page" : "Team project started – now send your team file to your teammates", "ok");
         PT.app.renderChrome(); location.hash = "#/teamproject"; PT.app.route();
       },
     });
+  }
+
+  /* ---------------- join by invite (online) ---------------- */
+  async function joinOnline(d) {
+    const s = store.get();
+    let p = s.projects.find((x) => x.id === d.id);
+    if (!p) { p = { id: d.id, name: d.name, number: "TEAM", address: "", createdAt: d.at, updatedAt: "0", team: { members: d.members || [], sections: {}, code: d.code, company: d.company || d.name, createdBy: d.createdBy } }; s.projects.push(p); }
+    (s.teamLocal ||= { imported: {}, movedOut: {} }).pendingJoin = { ...(s.teamLocal.pendingJoin || {}), [d.id]: true };
+    s.activeProjectId = d.id; store.emit();
+    if (!live.isOn(d.id)) await live.toggle(d.id);
+    toast(`Joining ${d.name} – the team's work loads in a few seconds`, "ok");
+    PT.app.renderChrome(); location.hash = "#/teamproject"; PT.app.route();
+  }
+  // after the team's data arrives: make sure I'm a member (joined by code) and bring my earlier work in
+  function finishJoin(pid) {
+    const s = store.get(), pend = s.teamLocal?.pendingJoin; if (!pend?.[pid]) return;
+    const p = s.projects.find((x) => x.id === pid); if (!p || p.updatedAt === "0") return;
+    delete pend[pid];
+    if (!p.team.members.includes(me()) && !store.isInstructor()) store.setTeamMember(pid, me(), true);
+    live.register(pid).catch(() => {});
+  }
+  function codeForm() {
+    modal({ title: "Join with a team code", body: `<p>Ask the teammate who started the team for the <b>team code</b> (on their Team Project page).</p><label>Team code <input name="code" required autocapitalize="none" autocomplete="off" data-label="Team code" placeholder="e.g. k7m2x9qpd"></label>`,
+      submitLabel: "Join", onSubmit: async (f) => {
+        const c = (f.code || "").trim().toLowerCase();
+        const d = (await live.directory()).find((x) => String(x.code).toLowerCase() === c);
+        if (!d) { toast("No team with that code – check it and make sure the team's creator is online", "warn"); return false; }
+        await joinOnline(d);
+      } });
   }
 
   /* ---------------- page ---------------- */
   function page(root) {
     const tps = teamProjects(), active = store.project();
     root.innerHTML = `<div class="page-head"><h1>Team Project</h1><div class="actions">
-        <button class="btn" id="joinBtn">⤒ Join / sync with team files</button><button class="btn btn-primary" id="startBtn">+ Start a team project</button></div></div>
+        ${live.available() ? `<button class="btn" id="codeBtn">🔑 Join with a team code</button>` : ""}<button class="btn" id="joinBtn" title="Offline way: open a team file a teammate sent you">⤒ Join / sync with team files</button><button class="btn btn-primary" id="startBtn">+ Start a team project</button></div></div>
+      ${live.available() && !store.isInstructor() ? `<div id="invites"></div>` : ""}
       <div class="card"><p><b>Work on the 3A PlanGrid Project as a team of 2–${MAX}.</b> One person starts the team project and sends the <b>team file</b>.
       Everyone opens it with <b>Join / sync</b>, then works on their own section. Whenever you want to combine work, everyone taps
       <b>⤓ Send my team file</b> and <b>⤒ Sync</b> with the files from the others – in any order, as often as you like. ${live.available() ? "Or turn on <b>Live sync</b> so changes appear on your teammates' devices by themselves." : ""}</p>
       <p class="muted small">Before you turn in your backup, sync one last time so your copy has everyone's work. Your instructor grades the team together and sees who did what.</p></div>
       ${store.isInstructor() && live.available() ? `<section class="card" id="allTeams"><h2>👨‍🏫 All class teams</h2><p class="muted small">Every team project with live sync shows here. Tap <b>Follow</b> to open it on this device – you're a member of every team and see their work live.</p><div id="dirList" class="muted">Loading…</div></section>` : ""}
       ${tps.length ? tps.map((p) => card(p, p.id === active?.id)).join("") : `<div class="card"><p class="muted">You're not on a team project yet. Start one, or open the team file a teammate sent you with <b>Join / sync</b>.</p></div>`}`;
+    $("#codeBtn", root) && ($("#codeBtn", root).onclick = codeForm);
+    if ($("#invites", root)) live.directory().then((list) => {
+      const el = $("#invites", root); if (!el) return;
+      const mine = list.filter((d) => (d.members || []).includes(me()) && !(store.get().projects.find((p) => p.id === d.id && live.isOn(d.id)))
+        && store.get().projects.find((p) => p.id === d.id)?.team?.memberLog?.[me()]?.in !== false);
+      el.innerHTML = mine.length ? `<section class="card" style="border-color:#2e9e44"><h2>📨 Team invites for you</h2>${mine.map((d) => `<div class="row gap" style="justify-content:space-between;flex-wrap:wrap;margin:6px 0">
+        <span><b>${esc(d.name)}</b> <span class="muted small">started by ${esc(d.createdBy || "a teammate")} · ${esc((d.members || []).filter((n) => !PT.roster.isInstructorName(n)).join(", "))}</span></span>
+        <button class="btn btn-primary btn-sm" data-joininv="${esc(d.id)}">Join team</button></div>`).join("")}</section>` : "";
+      $$("[data-joininv]", el).forEach((b) => (b.onclick = () => joinOnline(mine.find((d) => d.id === b.dataset.joininv))));
+    }).catch(() => {});
     if ($("#dirList", root)) live.directory().then((list) => {
       const el = $("#dirList", root); if (!el) return;
       list.sort((a, b) => String(b.at).localeCompare(String(a.at)));
@@ -152,7 +199,7 @@ PT.team = (() => {
     const students = t.members.filter((n) => !PT.roster.isInstructorName(n));
     const gone = Object.entries(t.memberLog || {}).filter(([n, e]) => !e.in && !t.members.includes(n));
     return `<section class="card team-card ${isActive ? "on" : ""}">
-      <div class="row gap" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">👥 ${esc(p.name)}</h2>
+      <div class="row gap" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">👥 ${esc(p.name)}${t.code && live.available() ? ` <span class="badge" title="Teammates who weren't invited can join with this code">Team code: ${esc(t.code)}</span>` : ""}</h2>
         <span>${isActive ? '<span class="badge st-Closed">Open now</span>' : `<button class="btn btn-sm" data-open="${p.id}">Open this project</button>`}
         ${isLive ? `<span class="badge st-Closed">● Live sync ${esc(live.status(p.id))}</span>` : ""}</span></div>
       <table class="tbl"><thead><tr><th>Member</th><th>Daily reports</th><th>Time sheets</th><th>Docs</th><th>Tasks</th><th>RFIs</th><th>Markups</th><th></th></tr></thead><tbody>
@@ -223,6 +270,7 @@ PT.team = (() => {
         else (share.records[d.coll] ||= []).push(obj);
       }
       const s = store.mergeTeam(store.get(), share);
+      finishJoin(pid);
       afterTeamChange(pid);
       if (s.added + s.updated + s.removed) conns[pid].status = "· updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     }
@@ -255,7 +303,7 @@ PT.team = (() => {
     async function register(pid) {
       const p = store.get().projects.find((x) => x.id === pid); if (!p?.team?.code) return;
       await firebase();
-      const info = { id: p.id, name: p.name, code: p.team.code, members: p.team.members, createdBy: p.team.createdBy || "", at: new Date().toISOString() };
+      const info = { id: p.id, name: p.name, company: p.team.company || p.name, code: p.team.code, members: p.team.members, createdBy: p.team.createdBy || "", at: new Date().toISOString() };
       await fb.db.collection("teams").doc(DIR).collection("records").doc("team__" + p.id).set({ coll: "team", id: p.id, data: JSON.stringify(info), by: me(), at: info.at });
     }
     async function directory() {

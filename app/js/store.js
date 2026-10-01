@@ -459,7 +459,7 @@ PT.store = (() => {
   // Called after any sync / membership change on this device.
   function teamCheck(teamPid) {
     const p = state.projects.find((x) => x.id === teamPid); const who = state.user?.name;
-    if (!p?.team || !who) return null;
+    if (!p?.team || !who || p.updatedAt === "0") return null; // still waiting for the team's data (joined online)
     state.teamLocal ||= { imported: {}, movedOut: {} };
     if ((p.team.members || []).includes(who)) {
       if (state.teamLocal.movedOut[teamPid]) delete state.teamLocal.movedOut[teamPid]; // added back

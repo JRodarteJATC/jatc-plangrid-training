@@ -40,7 +40,41 @@ PT.rfiLive = (() => {
         } while (page);
         return { docs: out };
       };
-      return { db, rest, col: db.collection("teams").doc(INBOX).collection("records") };
+      // generic HTTPS helpers (any teams/{code}/records collection)
+      const restList = async (code, fields) => {
+        const tok = await app.auth().currentUser.getIdToken();
+        const base = `https://firestore.googleapis.com/v1/projects/${cfg().projectId}/databases/(default)/documents/teams/${code}/records`;
+        const mask = (fields || []).map((f) => "&mask.fieldPaths=" + f).join("");
+        const out = []; let page = "";
+        do {
+          const res = await fetch(`${base}?pageSize=300${mask}${page ? "&pageToken=" + encodeURIComponent(page) : ""}`, { headers: { Authorization: "Bearer " + tok }, cache: "no-store" });
+          if (!res.ok) throw new Error("cloud " + res.status);
+          const j = await res.json();
+          for (const d of j.documents || []) out.push({ name: d.name.split("/").pop(), ...Object.fromEntries(Object.entries(d.fields || {}).map(([k, v]) => [k, v.stringValue ?? (v.integerValue != null ? +v.integerValue : v.booleanValue)])) });
+          page = j.nextPageToken || "";
+        } while (page);
+        return out;
+      };
+      const restGet = async (code, name) => {
+        const tok = await app.auth().currentUser.getIdToken();
+        const res = await fetch(`https://firestore.googleapis.com/v1/projects/${cfg().projectId}/databases/(default)/documents/teams/${code}/records/${name}`, { headers: { Authorization: "Bearer " + tok }, cache: "no-store" });
+        if (!res.ok) throw new Error("cloud " + res.status);
+        const f = (await res.json()).fields || {};
+        return Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.stringValue ?? (v.integerValue != null ? +v.integerValue : v.booleanValue)]));
+      };
+      // one-field query over HTTPS (Firebase's free plan counts every document read – so ask only for what changed)
+      const restQuery = async (code, field, op, value) => {
+        const tok = await app.auth().currentUser.getIdToken();
+        const url = `https://firestore.googleapis.com/v1/projects/${cfg().projectId}/databases/(default)/documents/teams/${code}:runQuery`;
+        const body = { structuredQuery: { from: [{ collectionId: "records" }], where: { fieldFilter: { field: { fieldPath: field }, op: op === ">" ? "GREATER_THAN" : "EQUAL", value: { stringValue: String(value) } } } } };
+        const res = await fetch(url, { method: "POST", headers: { Authorization: "Bearer " + tok, "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+        if (!res.ok) throw new Error("cloud " + res.status);
+        return (await res.json()).filter((x) => x.document).map((x) => {
+          const rec = Object.fromEntries(Object.entries(x.document.fields || {}).map(([k, v]) => [k, v.stringValue ?? (v.integerValue != null ? +v.integerValue : v.booleanValue)]));
+          return { name: x.document.name.split("/").pop(), ...rec, data: () => rec };
+        });
+      };
+      return { db, rest, restList, restGet, restQuery, col: db.collection("teams").doc(INBOX).collection("records") };
     })().catch((e) => { colP = null; throw e; });
     return colP;
   }
@@ -51,7 +85,7 @@ PT.rfiLive = (() => {
   function startApprentice() {
     if (!cfg()) return;
     const store = PT.store;
-    let timer = null, listening = false, busy = false;
+    let timer = null, listening = false, busy = false, lastAnsCheck = 0, ansSince = new Date(Date.now() - 10 * 60000).toISOString(); // older answers come with the live listener
     const tick = async () => {
       if (busy) return; busy = true;
       try {
@@ -114,9 +148,13 @@ PT.rfiLive = (() => {
           listening = true;
           c.where("coll", "==", "answer").onSnapshot((snap) => takeAnswers(snap.docChanges().map((ch) => ch.doc)), (e) => { listening = false; console.warn("RFI answers", e); });
         }
-        // backup check for answers (every tick, i.e. at least every 20 s) in case live updates are delayed
+        // backup check for NEW answers (at most once a minute, only while an RFI is waiting) in case live updates are delayed
         const open = mine.filter((r) => !r.answer);
-        if (open.length) await rest(true).then((snap) => takeAnswers(snap.docs)).catch(() => {});
+        if (open.length && Date.now() - lastAnsCheck > 60000) {
+          lastAnsCheck = Date.now();
+          const { restQuery } = await col();
+          await restQuery(INBOX, "at", ">", ansSince).then((docs) => { for (const d of docs) if (d.at > ansSince) ansSince = d.at; takeAnswers(docs.filter((d) => d.coll === "answer")); }).catch(() => {});
+        }
       } catch (e) { console.warn("RFI live inbox:", e.message); } finally { busy = false; }
     };
     // send quickly (students often close the tab right after Save & Send), and keep retrying until it goes through
@@ -142,11 +180,16 @@ PT.rfiLive = (() => {
       status = "live · checked " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
       if (sig !== lastSig) { lastSig = sig; onUpdate && onUpdate(); } else onUpdate && onUpdate("status");
     };
-    col().then(({ col: c, rest }) => {
+    col().then(({ col: c, rest, restQuery }) => {
       c.onSnapshot((snap) => { const ch = snap.docChanges(); take(ch.filter((x) => x.type !== "removed").map((x) => x.doc), false, ch.filter((x) => x.type === "removed").map((x) => x.doc.data())); }, (e) => console.warn("RFI inbox live:", e.message));
-      // also check every 10 s over plain HTTPS (and when the page comes back into view) in case the network delays live updates
-      const poll = () => rest().then((snap) => take(snap.docs, true)).catch((e) => { status = "offline (" + e.message + ")"; onUpdate && onUpdate("status"); });
-      setInterval(poll, 10000); poll();
+      // backup over plain HTTPS in case the network delays live updates: one full read at the start, then every 30 s
+      // ask only for what changed (Firebase's free plan counts every document read)
+      let since = "";
+      const mark = (docs) => { for (const doc of docs) { const a = doc.data().at; if (a > since) since = a; } };
+      const fail = (e) => { status = "offline (" + e.message + ")"; onUpdate && onUpdate("status"); };
+      rest().then((snap) => { mark(snap.docs); take(snap.docs, true); }).catch(fail);
+      const poll = () => { if (!since) return; restQuery(INBOX, "at", ">", since).then((docs) => { mark(docs); take(docs); }).catch(fail); };
+      setInterval(poll, 30000);
       document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
     }).catch((e) => { status = "offline (" + e.message + ")"; onUpdate && onUpdate(); });
   }
@@ -164,6 +207,34 @@ PT.rfiLive = (() => {
     for (const id of ids) { delete live[id]; delete liveAns[id]; deleted[id] = now; }
   }
   const visible = () => Object.values(live).filter((x) => !deleted[x.id] || String(x._at || "") > String(deleted[x.id]));
+  /* ---------- online turn-in (no .json file to e-mail) ---------- */
+  const TURNIN = "jatc-turn-in";
+  const slugOf = (n) => String(n || "apprentice").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "apprentice";
+  // Apprentice: upload the backup (in ~900 KB pieces). The practice-plan sheet pictures are left out – they're the same for
+  // everyone and the dashboard doesn't need them to grade.
+  async function turnIn(state) {
+    const s = JSON.parse(JSON.stringify(state));
+    for (const sh of s.sheets || []) if ((sh.tags || []).includes("Practice set")) for (const v of sh.versions || []) if (v.src?.dataUrl) { v.src = { kind: "image", dataUrl: "", stripped: true }; }
+    const json = JSON.stringify(s), CH = 900000, n = Math.max(1, Math.ceil(json.length / CH));
+    const { db } = await col();
+    const c = db.collection("teams").doc(TURNIN).collection("records"), slug = slugOf(s.user?.name), at = new Date().toISOString(), by = s.user?.name || "";
+    for (let i = 0; i < n; i++) await c.doc(`sub__${slug}__${i}`).set({ coll: "chunk", id: slug, i, data: json.slice(i * CH, (i + 1) * CH), by, at });
+    await c.doc(`sub__${slug}`).set({ coll: "submission", id: slug, meta: JSON.stringify({ name: by, classYear: s.user?.classYear || "", chunks: n, size: json.length, at }), by, at });
+    return { at, size: json.length };
+  }
+  // Instructor: list who turned in (small), then download each one.
+  async function turnIns() {
+    const { restQuery } = await col();
+    return (await restQuery(TURNIN, "coll", "==", "submission")).map((d) => { try { return { slug: d.id, ...JSON.parse(d.meta) }; } catch { return null; } }).filter(Boolean);
+  }
+  async function fetchTurnIn(sub) {
+    const { restGet } = await col();
+    const parts = [];
+    for (let i = 0; i < sub.chunks; i++) { const d = await restGet(TURNIN, `sub__${sub.slug}__${i}`); if (d.at !== sub.at) throw new Error(sub.name + " is turning in again right now – try in a minute"); parts.push(d.data); }
+    const json = parts.join("");
+    if (json.length !== sub.size) throw new Error(sub.name + "'s upload isn't complete – try again in a minute");
+    return JSON.parse(json);
+  }
   async function sendAnswers(answers) {
     const { db, col: c } = await col();
     for (let i = 0; i < answers.length; i += 300) {
@@ -173,5 +244,5 @@ PT.rfiLive = (() => {
     }
     for (const a of answers) liveAns[a.id] = a;
   }
-  return { startApprentice, startInstructor, sendAnswers, deleteRfis, enabled: () => !!cfg(), status: () => status, rfis: visible, sentAnswer: (id) => liveAns[id] };
+  return { turnIn, turnIns, fetchTurnIn, col, startApprentice, startInstructor, sendAnswers, deleteRfis, enabled: () => !!cfg(), status: () => status, rfis: visible, sentAnswer: (id) => liveAns[id] };
 })();

@@ -1438,7 +1438,12 @@ PT.quizzes = (() => {
       const missing = set.questions.filter((q) => ans[q.id] === undefined || (Array.isArray(ans[q.id]) && !ans[q.id].length)).length;
       const go = () => {
         bucket()[id] = { v: 2, answers: ans, savedAt: new Date().toISOString(), submittedAt: new Date().toISOString(), attempts: (saved.attempts || 0) + 1 };
-        store.log(`Submitted ${set.title}`); store.event("quiz_submitted", { quiz: id }); toast("Submitted – export your backup when your instructor asks", "ok");
+        store.log(`Submitted ${set.title}`); store.event("quiz_submitted", { quiz: id });
+        if (PT.rfiLive?.enabled() && store.get().user.name !== "Apprentice") {
+          toast("Submitted – sending it to your instructor…", "ok");
+          PT.rfiLive.turnIn(store.get()).then((r) => { store.get().settings.turnedInAt = r.at; store.emit(); toast("Turned in – your instructor has it", "ok"); })
+            .catch(() => toast("Saved, but couldn't send it online – use Settings → Turn in later", "warn"));
+        } else toast("Submitted – export your backup when your instructor asks", "ok");
         location.hash = "#/quizzes";
       };
       if (missing) PT.util.confirmBox(`${missing} question(s) are blank. Submit anyway?`, go, "Submit"); else go();

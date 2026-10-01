@@ -1,7 +1,7 @@
 # 3A PlanGrid Project
 
 **Class:** Week 3A – Advanced Specs, Blueprints & Details · **Instructor:** Juan Rodarte
-**Turn in:** Settings → **Export backup (.json)** → send the file to your instructor.
+**Turn in:** Settings → **📤 Turn in to Juan Rodarte** (online). No internet? Settings → **Export backup (.json)** → send the file.
 Your work is graded automatically from that file (100 points).
 
 You can do the project in the sample project (*Central Valley Training Center – Bldg B*), in the
@@ -14,17 +14,17 @@ of every project. If you have more than one project, the one with the best work 
 
 ## Working as a team (2–4 apprentices)
 Your instructor may let you do the project as a team – each person takes sections, and the work is combined.
-1. **One person** opens **Team Project → + Start a team project**, picks the teammates and **Sample drawings**
-   (or blank to upload real plans), then taps **⤓ Send my team file** and sends it (AirDrop, e-mail, shared drive).
-2. **Everyone else:** **Team Project → ⤒ Join / sync with team files** → choose that file.
+1. **One person** opens **Team Project → + Start a team project**, types your team's **company name** (required – every
+   team works as a roofing company), picks the teammates and **Sample drawings** (or blank to upload real plans).
+2. **Everyone else:** open **Team Project** – a **📨 Team invite** is waiting. Tap **Join team**. No files needed.
+   Not on the invite? Tap **🔑 Join with a team code** and type the **Team code** shown on the starter's Team Project page.
    Any tasks, punch items, RFIs, daily reports and documents you already made in your own project are **copied into the
    team** automatically (your original project keeps its copy). Switch between your projects with the **project menu
    at the top of the screen** (next to Plan Room Trainer).
 3. Use **Who does what** to split the sections (e.g. one person daily reports + time sheets, one tasks, one RFIs + documents).
-4. To combine work: everyone taps **⤓ Send my team file**, then **⤒ Sync** with the files from the others. Do it as often
-   as you like, in any order. Deleted items stay deleted; if two people made "RFI-001", one becomes RFI-002.
-   If your instructor turned on **⚡ Live sync**, changes show up on your teammates' devices by themselves.
-5. **Before you turn in your backup, sync one last time.** The whole team gets the team score; your instructor also
+4. Work combines **by itself** (live sync, needs internet). No internet? Swap team files instead: everyone taps
+   **⤓ Send my team file**, then **⤒ Join / sync with team files** with the files from the others.
+5. **Turn in:** each person taps **Settings → 📤 Turn in**. The whole team gets the team score; your instructor also
    sees who did what.
 
 **Changing the team** (Team Project page, member list):
@@ -97,4 +97,4 @@ and specs, missing information, field conditions).
 - [ ] A time sheet for every daily-report day
 - [ ] 3 tasks (Type: Task) – assigned, Juan Rodarte watching, description, photo, delay/cost, published markups
 - [ ] 3 RFIs sent to Juan Rodarte – due date, sent date, sheets referenced, published markups
-- [ ] Settings → Export backup → sent to instructor
+- [ ] Settings → 📤 Turn in (or Export backup → sent to instructor)

@@ -795,9 +795,13 @@ PT.views = (() => {
           <ul class="list">${s.projects.map((p) => `<li>${p.id === s.activeProjectId ? "✅" : ""} <a href="#" data-p="${p.id}">${esc(p.name)}</a> <span class="muted">${esc(p.number || "")}</span></li>`).join("")}</ul>
           <button class="btn" id="newProj">+ New blank project</button>
         </section>
-        <section class="card"><h2>Backup & hand-in</h2>
-          <p>Export everything (sheets, markups, issues, photos, training progress) to one file. Apprentices can email this file to the instructor; the instructor imports it to review the work.</p>
-          <div class="row gap"><button class="btn btn-primary" id="expBtn">⤓ Export backup (.json)</button><button class="btn" id="impBtn">⤒ Import backup</button></div>
+        <section class="card"><h2>Turn in your work</h2>
+          ${PT.rfiLive?.enabled() ? `<p><b>📤 Turn in online</b> sends all your work (missions, quizzes, labs, 3A project) straight to your instructor – no file to e-mail. Turn in again any time; your instructor always gets the newest.</p>
+          <div class="row gap"><button class="btn btn-primary" id="turnInBtn">📤 Turn in to ${esc(PT.roster.INSTRUCTOR.name)}</button></div>
+          <p class="muted small" id="turnInSt">${s.settings.turnedInAt ? "Last turned in " + fmtDateTime(s.settings.turnedInAt) : "Not turned in yet."}</p>
+          <hr>` : ""}
+          <p class="small">No internet? Export everything to one file and e-mail it to your instructor.</p>
+          <div class="row gap"><button class="btn ${PT.rfiLive?.enabled() ? "" : "btn-primary"}" id="expBtn">⤓ Export backup (.json)</button><button class="btn" id="impBtn">⤒ Import backup</button></div>
         </section>
         <section class="card"><h2>Instructors</h2><p>Grade a whole class at once: load every apprentice's backup file, see auto-scored missions and takeoffs, read their RFIs and reports, and keep a gradebook.</p><a class="btn" href="instructor.html">Open Instructor Dashboard →</a></section>
         <section class="card"><h2>Reset</h2><p>Start over with the original sample project. <b>This erases all your work.</b></p><button class="btn btn-danger" id="resetBtn">Reset training data</button></section>
@@ -829,6 +833,13 @@ PT.views = (() => {
     $("#rndEm", root).onclick = () => (pf.elements.email.value = PT.roster.randomEmail(pf.elements.name.value));
     $$("[data-p]", root).forEach((a) => (a.onclick = (e) => { e.preventDefault(); s.activeProjectId = a.dataset.p; store.emit(); location.hash = "#/"; }));
     $("#newProj", root).onclick = () => modal({ title: "New project", body: `<label>Name <input name="name" required data-label="Name"></label><label>Project # <input name="number"></label><label>Address <input name="address"></label>`, onSubmit: (f) => { store.newProject(f.name, f.number, f.address); location.hash = "#/sheets"; PT.app.renderChrome(); } });
+    $("#turnInBtn", root) && ($("#turnInBtn", root).onclick = async (e) => {
+      if (!s.user.name || s.user.name === "Apprentice") return toast("Set your name first (Your profile, above)", "warn");
+      const b = e.target; b.disabled = true; b.textContent = "Sending…";
+      try { const r = await PT.rfiLive.turnIn(s); s.settings.turnedInAt = r.at; store.event("turn_in"); store.emit(); toast("Turned in – your instructor has your work", "ok"); $("#turnInSt", root).textContent = "Last turned in " + fmtDateTime(r.at); }
+      catch (err) { toast("Couldn't turn in (" + err.message + "). Use Export backup and e-mail the file instead.", "warn"); }
+      finally { b.disabled = false; b.textContent = `📤 Turn in to ${PT.roster.INSTRUCTOR.name}`; }
+    });
     $("#expBtn", root).onclick = () => { download(`plan-trainer-${s.user.name.replace(/\W+/g, "_")}-${today()}.json`, store.exportJSON(), "application/json"); store.event("export", { what: "backup" }); };
     $("#impBtn", root).onclick = () => {
       const inp = h(`<input type="file" accept=".json,application/json" hidden>`); document.body.appendChild(inp);

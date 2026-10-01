@@ -49,7 +49,7 @@ their own browser.
 | 1:35 | Break |
 | 1:45 | Module 3 demo (calibrate live, squares, rolls) → **Lab 3** takeoff |
 | 2:35 | Module 4 demo → start **Lab 4** punch walk (Option A on the mock-up if possible) |
-| 2:55 | Apprentices **Export backup** and turn it in |
+| 2:55 | Apprentices tap **Settings → 📤 Turn in** |
 
 ### Session 2 (3 hrs)
 | Time | Activity |
@@ -63,16 +63,16 @@ their own browser.
 | 2:50 | Print training records (Training Missions → Progress report); sign checklists |
 
 ## Collecting and grading work (automatic)
-Almost everything is graded automatically. Apprentice data never leaves their device unless
-they send it, so grading works by file:
+Almost everything is graded automatically.
 
 1. Apprentices do the labs in the app and answer every quiz, lab worksheet and the written final
    under **Quizzes & Worksheets** in the app.
-2. They click **Settings → Export backup (.json)** and send you the file (email, shared
-   Google Drive/OneDrive folder, LMS, or USB).
-3. Open the **Instructor Dashboard** (Settings → *Open Instructor Dashboard*, or `…/instructor.html`).
-   Drop in **all** the apprentice files plus **`grading-key.json`** from the private
-   `jatc-plangrid-instructor-keys` repo. The key is remembered in that browser.
+2. They tap **Settings → 📤 Turn in to Juan Rodarte** (online – no file). Submitting a quiz also turns
+   their work in by itself. Turning in again replaces the older copy.
+   *No internet?* **Settings → Export backup (.json)** and send you the file (email, LMS, USB).
+3. Open the **Instructor Dashboard** (`…/instructor.html`) and click **☁ Load turned-in work** – everyone who
+   turned in loads at once. Drop in **`grading-key.json`** once (private `jatc-plangrid-instructor-keys` repo;
+   it's remembered in that browser) and any backup files you were e-mailed.
 4. The dashboard scores:
 
 | Assessment | How it's graded |
