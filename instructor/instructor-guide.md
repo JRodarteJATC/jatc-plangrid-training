@@ -128,6 +128,12 @@ removed goes back to their own project (their pre-team work is still there, plus
 their work is hidden from the team; they are graded on
 **their own** work only and the team's score no longer includes it.
 
+**Deleting a team (instructor only):** in instructor mode, open **Team Project** → **All class teams** → **🗑 Delete**
+(or **🗑 Delete team** on a team you follow). Each member's tasks, RFIs, punch items and daily reports go back to
+their own project, like **Leave team**, so nothing is lost for grading. The team is then removed from every device,
+from All class teams, from the invites and from the cloud. Members who are offline get the change the next time
+their app is online. Old team files can't bring a deleted team back. This can't be undone.
+
 **Instructor mode in the app (full access):** on your own device open the app → **Settings → Your profile** → pick
 **Juan Rodarte** (bottom of the name list) → **Save profile** → type the **instructor passcode** (it's in the
 CONFIDENTIAL Instructor Packet – never give it to apprentices). Instructor mode lets you:

@@ -27,6 +27,13 @@ PT.team = (() => {
   }
   function afterTeamChange(pid) {
     const r = store.teamCheck(pid); if (!r) return r;
+    if (r.deleted) {
+      live.drop(pid);
+      if (!store.isInstructor()) toast(`The instructor deleted the team “${r.team}”.${r.to ? ` Your work from the team is in “${r.to}”${r.what ? ` (${r.what})` : ""}.` : ""}`, "warn");
+      PT.app.renderChrome && PT.app.renderChrome();
+      if (location.hash.startsWith("#/teamproject") && !document.querySelector(".modal-backdrop")) PT.app.route();
+      return r;
+    }
     if (r.joined && r.what) toast(`Copied your work into the team from “${r.from}”: ${r.what}. “${r.from}” still has it – switch projects with the menu at the top.`, "ok");
     if (r.left && live.isOn(pid)) setTimeout(() => { if (live.isOn(pid)) live.toggle(pid).catch(() => {}); }, 8000); // stop live-syncing a team you're no longer on (after your leave has gone out)
     if (r.left) toast(`You're off the team – you're back in “${r.to}”${r.what ? ` with the work you did in the team (${r.what})` : ""}. Everything you had before joining is still there.`, "ok");
@@ -38,6 +45,7 @@ PT.team = (() => {
     for (const t of texts) {
       const obj = JSON.parse(t);
       const st = store.mergeTeam(store.get(), obj, { noEmit: true });
+      if (st.deletedTeam) { toast(`“${obj.project.name}” was deleted by the instructor – that team file can't be used any more.`, "warn"); continue; }
       for (const k in tot) tot[k] += st[k];
       pid = obj.project.id; n++;
       const p = store.get().projects.find((x) => x.id === pid);
@@ -117,6 +125,21 @@ PT.team = (() => {
     if (!p.team.members.includes(me()) && !store.isInstructor()) store.setTeamMember(pid, me(), true);
     live.register(pid).catch(() => {});
   }
+  /* Instructor only: delete a team. Each member's work goes back to their own project (like Leave), then the team is
+     removed from every device, the class team list and the cloud. */
+  function askDelete(d) {
+    if (!d || !store.isInstructor()) return;
+    const kids = (d.members || []).filter((n) => !PT.roster.isInstructorName(n));
+    PT.util.confirmBox(`Delete the team “${d.name}”${kids.length ? ` (${kids.join(", ")})` : ""}? Each member's tasks, RFIs, punch items and daily reports go back to their own project – nothing they did is lost for grading. The team project is removed from every device${live.available() ? ", from All class teams and from the cloud" : ""}. This can't be undone.`, async () => {
+      try {
+        toast(`Deleting “${d.name}”…`);
+        await live.deleteTeam(d);
+        toast(`Team “${d.name}” deleted – members get their work back the next time their app is online`, "ok");
+      } catch (e) { toast("Couldn't delete the team: " + e.message, "warn"); }
+      PT.app.renderChrome && PT.app.renderChrome();
+      if (location.hash.startsWith("#/teamproject")) PT.app.route();
+    }, "Delete team");
+  }
   function codeForm() {
     modal({ title: "Join with a team code", body: `<p>Ask the teammate who started the team for the <b>team code</b> (on their Team Project page).</p><label>Team code <input name="code" required autocapitalize="none" autocomplete="off" data-label="Team code" placeholder="e.g. k7m2x9qpd"></label>`,
       submitLabel: "Join", onSubmit: async (f) => {
@@ -169,9 +192,10 @@ PT.team = (() => {
       el.innerHTML = list.length ? `<table class="tbl"><thead><tr><th>Team</th><th>Members</th><th>Updated</th><th></th></tr></thead><tbody>${list.map((d) => {
         const have = store.get().projects.find((p) => p.id === d.id);
         return `<tr><td><b>${esc(d.name)}</b></td><td>${esc((d.members || []).filter((n) => !PT.roster.isInstructorName(n)).join(", "))}</td><td class="small">${fmtDateTime(d.at)}</td>
-          <td>${have && live.isOn(d.id) ? `<button class="btn btn-sm" data-open="${d.id}">Open</button>` : `<button class="btn btn-sm btn-primary" data-follow="${esc(d.id)}">Follow</button>`}</td></tr>`; }).join("")}</tbody></table>`
+          <td style="white-space:nowrap">${have && live.isOn(d.id) ? `<button class="btn btn-sm" data-open="${d.id}">Open</button>` : `<button class="btn btn-sm btn-primary" data-follow="${esc(d.id)}">Follow</button>`} <button class="btn btn-sm btn-danger" data-deldir="${esc(d.id)}" title="Delete this team">🗑 Delete</button></td></tr>`; }).join("")}</tbody></table>`
         : `<p class="muted">No teams yet. Teams appear here when apprentices start a team project (with internet).</p>`;
       $$("[data-open]", el).forEach((b) => (b.onclick = () => { store.get().activeProjectId = b.dataset.open; store.emit(); PT.app.renderChrome(); location.hash = "#/"; }));
+      $$("[data-deldir]", el).forEach((b) => (b.onclick = () => askDelete(list.find((x) => x.id === b.dataset.deldir))));
       $$("[data-follow]", el).forEach((b) => (b.onclick = async () => {
         const d = list.find((x) => x.id === b.dataset.follow); const s = store.get();
         if (!s.projects.find((p) => p.id === d.id)) s.projects.push({ id: d.id, name: d.name, number: "TEAM", address: "", createdAt: d.at, updatedAt: "0", team: { members: d.members || [], sections: {}, code: d.code, createdBy: d.createdBy } });
@@ -189,6 +213,7 @@ PT.team = (() => {
     const proj = (id) => store.get().projects.find((x) => x.id === id);
     $$("[data-rm]", root).forEach((b) => (b.onclick = () => PT.util.confirmBox(`Remove ${b.dataset.rm} from ${proj(b.dataset.p).name}? Their work is hidden from the team and no longer counts for it (it moves to their own project on their device). Send your team file (or keep live sync on) so everyone gets the change.`, () => { store.setTeamMember(b.dataset.p, b.dataset.rm, false); live.register(b.dataset.p).catch(() => {}); toast(`${b.dataset.rm} removed – send your team file so teammates get the change`, "ok"); page(root); }, "Remove")));
     $$("[data-leave]", root).forEach((b) => (b.onclick = () => PT.util.confirmBox(`Leave ${proj(b.dataset.leave).name}? Your tasks, RFIs, punch items and daily reports move to a project of your own and are graded on their own – they no longer show or count for the team. Then send your team file once so your teammates see that you left.`, () => { const pid = b.dataset.leave; store.setTeamMember(pid, me(), false); if (!afterTeamChange(pid)?.what) toast("You left the team", "ok"); toast("Send your team file once so your teammates see that you left", "ok"); page(root); }, "Leave team")));
+    $$("[data-delteam]", root).forEach((b) => (b.onclick = () => { const p = proj(b.dataset.delteam); askDelete({ id: p.id, name: p.name, code: p.team.code, members: p.team.members, at: p.createdAt, createdBy: p.team.createdBy }); }));
     $$("[data-add]", root).forEach((b) => (b.onclick = () => {
       const p = proj(b.dataset.add), roster = (PT.roster?.APPRENTICES || []).map((a) => a.name).filter((n) => !p.team.members.includes(n));
       modal({ title: `Add a teammate to ${p.name}`, body: `<label>Teammate <select name="n"><option value="">— pick —</option>${roster.map((n) => `<option>${esc(n)}</option>`).join("")}</select></label><label>…or type a name <input name="other" placeholder="First Last"></label>`,
@@ -228,6 +253,7 @@ PT.team = (() => {
         <button class="btn btn-primary" data-send="${p.id}">⤓ Send my team file</button>
         <button class="btn" data-sync="${p.id}">⤒ Sync with teammates' files</button>
         ${live.available() ? `<button class="btn" data-live="${p.id}">${isLive ? "⏸ Turn off live sync" : "⚡ Turn on live sync"}</button>` : ""}
+        ${store.isInstructor() ? `<button class="btn btn-danger" data-delteam="${p.id}">🗑 Delete team</button>` : ""}
       </div>
       <p class="muted small">${t.lastShared ? `You sent your team file ${fmtDateTime(t.lastShared)}. ` : ""}${t.lastMerged ? `Last synced with a teammate's file ${fmtDateTime(t.lastMerged)}.` : "Not synced with a teammate's file yet."}</p>
     </section>`;
@@ -293,7 +319,7 @@ PT.team = (() => {
       const s = store.mergeTeam(store.get(), share);
       finishJoin(pid);
       afterTeamChange(pid);
-      if (s.added + s.updated + s.removed) conns[pid].status = "· updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      if (conns[pid] && s.added + s.updated + s.removed) conns[pid].status = "· updated " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     }
     async function connect(pid) {
       const p = store.get().projects.find((x) => x.id === pid); if (!p?.team) return;
@@ -312,6 +338,7 @@ PT.team = (() => {
         if (top) setSync(pid, { seen: top });
         const docs = raw.filter((d) => d.by !== device || first);
         if (docs.length) applyDocs(pid, docs);
+        if (!conns[pid] || !store.get().projects.some((x) => x.id === pid)) return; // team was deleted
         if (first) { first = false; conns[pid].status = "· on"; if (!store.isInstructor()) pushAll(pid, syncInfo(pid).pushed); if (location.hash.startsWith("#/teamproject") && !document.querySelector(".modal-backdrop")) PT.app.route(); }
       }, (e) => { conns[pid].status = "· error: " + e.message; });
       if (!timer) timer = setInterval(flush, 1500);
@@ -340,10 +367,39 @@ PT.team = (() => {
     async function directory() {
       await firebase();
       const snap = await fb.db.collection("teams").doc(DIR).collection("records").get();
-      return snap.docs.map((d) => { try { return JSON.parse(d.data().data); } catch { return null; } }).filter(Boolean);
+      const rows = snap.docs.map((d) => { try { return { coll: d.data().coll, ...JSON.parse(d.data().data) }; } catch { return null; } }).filter(Boolean);
+      const gone = new Set(rows.filter((r) => r.coll === "deletedTeam").map((r) => r.id));
+      return rows.filter((r) => r.coll !== "deletedTeam" && !gone.has(r.id));
+    }
+    function drop(pid) { conns[pid]?.unsub?.(); delete conns[pid]; delete on()[pid]; }
+    async function deleteTeam(d) {
+      const local = store.get().projects.find((x) => x.id === d.id);
+      const code = d.code || local?.team?.code;
+      drop(d.id);
+      if (cfg() && code) {
+        await firebase();
+        const col = fb.db.collection("teams").doc(code).collection("records"), pdoc = "projects__" + d.id;
+        const all = (await col.get()).docs;
+        const cloudP = all.find((x) => x.id === pdoc);
+        let proj = local && local.updatedAt !== "0" ? JSON.parse(JSON.stringify(local)) : null;
+        if (!proj && cloudP) try { proj = JSON.parse(cloudP.data().data); } catch { }
+        if (!proj) proj = { id: d.id, name: d.name, number: "TEAM", address: "", createdAt: d.at || new Date().toISOString(), team: { members: d.members || [], sections: {}, code, createdBy: d.createdBy || "" } };
+        const at = new Date().toISOString();
+        proj.team.deleted = { at, by: me() }; proj.updatedAt = at;
+        // 1) the "deleted" note goes up first so members' devices hear about it, 2) the team's records are erased,
+        // 3) the team leaves the class list
+        await col.doc(pdoc).set({ coll: "projects", id: d.id, data: JSON.stringify(proj), by: device, at, st: serverTime() });
+        const rest = all.filter((x) => x.id !== pdoc);
+        for (let i = 0; i < rest.length; i += 400) { const b = fb.db.batch(); for (const x of rest.slice(i, i + 400)) b.delete(col.doc(x.id)); await b.commit(); }
+        const dir = fb.db.collection("teams").doc(DIR).collection("records"), db = fb.db.batch();
+        db.delete(dir.doc("team__" + d.id));
+        db.set(dir.doc("deleted__" + d.id), { coll: "deletedTeam", id: d.id, data: JSON.stringify({ id: d.id, deleted: at }), by: me(), at }); // so a member's device that re-lists the team can't bring it back
+        await db.commit();
+      }
+      store.dropTeam(d.id);
     }
     return {
-      register, directory,
+      register, directory, drop, deleteTeam,
       available: () => !!cfg(),
       isOn: (pid) => !!on()[pid],
       status: (pid) => conns[pid]?.status || "",

@@ -294,6 +294,7 @@ PT.store = (() => {
     if (!share || share.type !== "plan-trainer-team" || !share.project) throw new Error("Not a team project file");
     const pid = share.project.id, stats = { added: 0, updated: 0, removed: 0 };
     st.tombstones ||= {};
+    if (st.teamLocal?.deletedTeams?.[pid]) return { ...stats, deletedTeam: true }; // the instructor deleted this team – ignore old files / syncs
     let p = st.projects.find((x) => x.id === pid);
     if (!p) { st.projects.push(JSON.parse(JSON.stringify(share.project))); stats.added++; }
     else {
@@ -355,7 +356,8 @@ PT.store = (() => {
     const members = names.filter((n) => (log[n] ? log[n].in : true));
     const sections = { ...(a.sections || {}), ...(b.sections || {}) };
     for (const k of Object.keys(sections)) if (sections[k] && !members.includes(sections[k])) sections[k] = "";
-    return { members, memberLog: log, sections };
+    const deleted = a.deleted || b.deleted; // once the instructor deletes a team, it stays deleted
+    return { members, memberLog: log, sections, ...(deleted ? { deleted } : {}) };
   }
   function setTeamMember(projectId, name, isIn) {
     const p = state.projects.find((x) => x.id === projectId); if (!p?.team || !name) return;
@@ -461,12 +463,42 @@ PT.store = (() => {
     const p = state.projects.find((x) => x.id === teamPid); const who = state.user?.name;
     if (!p?.team || !who || p.updatedAt === "0") return null; // still waiting for the team's data (joined online)
     state.teamLocal ||= { imported: {}, movedOut: {} };
+    if (p.team.deleted) { // the instructor deleted the team: my team work goes back to my own project, then the team is removed here
+      const r = !isInstructor() && !state.teamLocal.movedOut[teamPid] && (p.team.members || []).includes(who) ? takeMyWork(teamPid) : null;
+      const name = p.name; dropTeam(teamPid);
+      return { deleted: true, team: name, ...(r || {}) };
+    }
     if ((p.team.members || []).includes(who)) {
       if (state.teamLocal.movedOut[teamPid]) delete state.teamLocal.movedOut[teamPid]; // added back
       const r = importMyWork(teamPid); return r && { joined: true, ...r };
     }
     if (p.team.memberLog?.[who] && !p.team.memberLog[who].in) { const r = takeMyWork(teamPid); return r && { left: true, ...r }; }
     return null;
+  }
+
+  // Remove a (deleted) team project and everything in it from this device. Remembered, so old team files can't bring it back.
+  function dropTeam(pid) {
+    state.teamLocal ||= { imported: {}, movedOut: {} };
+    const p = state.projects.find((x) => x.id === pid);
+    state.teamLocal.deletedTeams = { ...(state.teamLocal.deletedTeams || {}), [pid]: p?.team?.deleted?.at || nowIso() };
+    if (state.teamLocal.sync) delete state.teamLocal.sync[pid];
+    if (state.settings?.liveSync) delete state.settings.liveSync[pid];
+    if (p) {
+      state.projects = state.projects.filter((x) => x.id !== pid);
+      for (const c of TEAM_COLLS) if (Array.isArray(state[c])) state[c] = state[c].filter((r) => r.projectId !== pid);
+      for (const [id, t] of Object.entries(state.tombstones || {})) if (t.projectId === pid) delete state.tombstones[id];
+      log(`Team project ${p.name} was deleted`);
+    }
+    if (!state.projects.length) { newProject("My Project", "", ""); return; }
+    if (!state.projects.some((x) => x.id === state.activeProjectId)) state.activeProjectId = (state.projects.find((x) => !x.team) || state.projects[0]).id;
+    sigsReady = false; trackChanges(); emit();
+  }
+  // Instructor only: mark a team deleted (members' devices give each person's work back and remove the team).
+  function markTeamDeleted(pid) {
+    const p = state.projects.find((x) => x.id === pid); if (!p?.team || !isInstructor()) return null;
+    p.team.deleted = { at: nowIso(), by: state.user?.name || "Instructor" };
+    p.updatedAt = nowIso(); emit();
+    return p;
   }
 
   function newTeamProject({ name, members, withSamples }) {
@@ -494,7 +526,7 @@ PT.store = (() => {
   // The Instructor Dashboard calls viewOnly() so nothing it does is ever written over this browser's saved project.
   function viewOnly(on = true) { readOnly = on; }
 
-  return { isInstructor, TEAM_COLLS, shareFor, mergeTeam, setTeamMember, teamCheck, importMyWork, takeMyWork, newTeamProject, takeChanges, teamProjectIds, applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
+  return { isInstructor, TEAM_COLLS, dropTeam, markTeamDeleted, shareFor, mergeTeam, setTeamMember, teamCheck, importMyWork, takeMyWork, newTeamProject, takeChanges, teamProjectIds, applyRfiAnswers, viewOnly, swap, init, get, pid, project, list, find, add, update, remove, nextNumber, onChange, emit, log, event, newProject, resetAll, exportJSON, importJSON, today };
 })();
 
 

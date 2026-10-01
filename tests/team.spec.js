@@ -13,6 +13,12 @@ async function fresh(page, name) {
   await page.waitForTimeout(300);
 }
 const S = (page, fn, arg) => page.evaluate(fn, arg);
+// Tests never use the real instructor passcode: the app gets a test-only one (TEST-ONLY-1234) instead.
+const TEST_PASS = "test-only-1234";
+async function testPasscode(ctx) {
+  await ctx.route("**/js/roster.js*", async (r) => { const res = await r.fetch(); r.fulfill({ response: res, body: (await res.text()).replace(/INSTRUCTOR_PASS_SHA256 = "[0-9a-f]+"/, 'INSTRUCTOR_PASS_SHA256 = "2c4246d80d878ce1460a6fda6e34749b14f727f53bc075d17b1cefb4e17e2ca4"') }); });
+}
+
 async function sendTeamFile(page) {
   await page.goto("/#/teamproject");
   const dl = page.waitForEvent("download");
@@ -188,7 +194,7 @@ const FAKE_FIREBASE = `
   const col = (path, filt) => ({
     doc: (id) => ({ _path: path + "/" + id, collection: (c) => col(path + "/" + id + "/" + c), set: (obj) => window.__relaySet([[path + "/" + id, fix(obj)]]) }),
     where: (f, op, val) => col(path, (v) => (op === "==" ? v[f] === val : v[f] > val)),
-    get: async () => ({ docs: Object.values(await window.__relayGet(path)).filter((v) => !filt || filt(v)).map((v) => ({ data: () => v })) }),
+    get: async () => ({ docs: Object.entries(await window.__relayGet(path)).filter(([, v]) => !filt || filt(v)).map(([k, v]) => ({ id: k.split("/").pop(), data: () => v })) }),
     onSnapshot(cb) {
       let seen = {};
       const tick = async () => {
@@ -212,7 +218,9 @@ test("live sync: a teammate's change shows up by itself", async ({ browser }) =>
     const ctx = await browser.newContext({ acceptDownloads: true });
     await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/")).map(([k, v]) => [k, v])));
     await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) { if (v === null) delete cloud[k]; else cloud[k] = v; } });
-    await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake' };" }));
+    await testPasscode(ctx);
+    await testPasscode(ctx);
+  await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake' };" }));
     await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
     return ctx.newPage();
   };
@@ -240,7 +248,9 @@ test("RFIs sent to the instructor arrive in the dashboard inbox live, and answer
     const ctx = await browser.newContext({ acceptDownloads: true });
     await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/"))));
     await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) { if (v === null) delete cloud[k]; else cloud[k] = v; } });
-    await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
+    await testPasscode(ctx);
+    await testPasscode(ctx);
+  await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
     await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
     return ctx.newPage();
   };
@@ -288,7 +298,9 @@ test("instructor mode: passcode, answer RFIs in the app, member of every team, f
     const ctx = await browser.newContext({ acceptDownloads: true });
     await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/"))));
     await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) { if (v === null) delete cloud[k]; else cloud[k] = v; } });
-    await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
+    await testPasscode(ctx);
+    await testPasscode(ctx);
+  await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
     await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
     return ctx.newPage();
   };
@@ -308,7 +320,7 @@ test("instructor mode: passcode, answer RFIs in the app, member of every team, f
   await T.fill("#prof input[name=name]", "Juan Rodarte"); await T.click("#prof button.btn-primary");
   await T.fill(".modal input[name=code]", "WRONG"); await T.click(".modal button[type=submit]");
   expect(await S(T, () => PT.store.isInstructor())).toBe(false);
-  await T.fill(".modal input[name=code]", "jr-6zvv-py7p"); await T.click(".modal button[type=submit]");
+  await T.fill(".modal input[name=code]", TEST_PASS); await T.click(".modal button[type=submit]");
   await expect.poll(() => S(T, () => PT.store.isInstructor())).toBe(true);
   expect(await S(T, () => PT.store.get().user.name)).toBe("Juan Rodarte");
 
@@ -339,6 +351,7 @@ async function cloudPage(browser, cloud, name) {
   const ctx = await browser.newContext({ acceptDownloads: true });
   await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/"))));
   await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) { if (v === null) delete cloud[k]; else cloud[k] = v; } });
+  await testPasscode(ctx);
   await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
   await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
   const enc = (v) => (typeof v === "number" ? { integerValue: String(v) } : typeof v === "boolean" ? { booleanValue: v } : { stringValue: String(v) });
@@ -413,5 +426,60 @@ test("reopening a team project only downloads what changed (saves Firebase reads
   expect(Object.keys(mineBefore).length).toBeGreaterThan(5);
   expect(reup).toBe(0);
   expect(total).toBeGreaterThan(5);
+  expect(errs).toEqual([]);
+});
+
+test("instructor deletes a team: members get their work back, the team disappears everywhere", async ({ browser }) => {
+  test.setTimeout(120000);
+  const cloud = {};
+  const mk = async () => {
+    const ctx = await browser.newContext({ acceptDownloads: true });
+    await ctx.exposeFunction("__relayGet", (path) => Object.fromEntries(Object.entries(cloud).filter(([k]) => k.startsWith(path + "/"))));
+    await ctx.exposeFunction("__relaySet", (ops) => { for (const [k, v] of ops) { if (v === null) delete cloud[k]; else cloud[k] = v; } });
+    await testPasscode(ctx);
+    await ctx.route("**/js/cloud-config.js*", (r) => r.fulfill({ contentType: "text/javascript", body: "PT.cloudConfig = { projectId: 'fake', apiKey: 'x' };" }));
+    await ctx.route("https://www.gstatic.com/firebasejs/**", (r) => r.fulfill({ contentType: "text/javascript", body: r.request().url().includes("app-compat") ? FAKE_FIREBASE : "" }));
+    return ctx.newPage();
+  };
+  const A = await mk(), B = await mk(), T = await mk();
+  const errs = []; for (const p of [A, B, T]) p.on("pageerror", (e) => errs.push(e.message));
+  await fresh(A, "Mateo Ramirez"); await fresh(B, "Luis Herrera");
+  await A.goto("/#/teamproject"); await A.click("#startBtn"); await A.fill(".modal input[name=company]", "Doomed Roofing");
+  await A.check(".modal input[name=m][value='Luis Herrera']"); await A.click(".modal button[type=submit]");
+  const teamFile = await sendTeamFile(A);
+  await syncFiles(B, [teamFile]);
+  for (const P of [A, B]) { await P.goto("/#/teamproject"); await expect(P.locator(".team-card")).toContainText("Live sync", { timeout: 10000 }); }
+  await addRfi(A, "Team RFI by Mateo");
+  await S(B, () => PT.store.add("reports", { type: "Daily Report", date: "2026-10-07", status: "Submitted", createdBy: "Luis Herrera", workPerformed: "Luis team report", crew: [] }));
+  await expect.poll(() => S(A, () => PT.store.list("reports").some((r) => r.workPerformed === "Luis team report")), { timeout: 10000 }).toBe(true);
+  await expect.poll(() => Object.keys(cloud).some((k) => k.includes("jatc-team-directory/records/team__")), { timeout: 10000 }).toBe(true);
+
+  // apprentices have no Delete button
+  await A.goto("/#/teamproject"); await expect(A.locator("[data-delteam]")).toHaveCount(0);
+
+  // instructor: All class teams → Delete
+  await T.goto("/#/settings");
+  await T.fill("#prof input[name=name]", "Juan Rodarte"); await T.click("#prof button.btn-primary");
+  await T.fill(".modal input[name=code]", TEST_PASS); await T.click(".modal button[type=submit]");
+  await expect.poll(() => S(T, () => PT.store.isInstructor())).toBe(true);
+  await T.goto("/#/teamproject");
+  await expect(T.locator("#allTeams")).toContainText("Doomed Roofing", { timeout: 10000 });
+  await T.click("[data-deldir]");
+  await expect(T.locator(".modal")).toContainText("Mateo Ramirez, Luis Herrera");
+  await T.click(".modal button[type=submit]");
+  await expect(T.locator("#allTeams")).not.toContainText("Doomed Roofing", { timeout: 10000 });
+
+  // members: the team is gone, each person's work is back in their own project
+  for (const [P, mine] of [[A, (s) => s.rfis.some((r) => r.subject === "Team RFI by Mateo")], [B, (s) => s.reports.some((r) => r.workPerformed === "Luis team report")]]) {
+    await expect.poll(() => S(P, () => PT.store.get().projects.some((p) => p.name === "Doomed Roofing")), { timeout: 15000 }).toBe(false);
+    expect(await S(P, (f) => { const s = PT.store.get(); return new Function("s", "return (" + f + ")(s)")(s) && !!PT.store.project(); }, mine.toString())).toBe(true);
+  }
+  // only the "deleted" note is left in the cloud; the class list has it marked deleted
+  expect(Object.keys(cloud).filter((k) => k.startsWith("teams/") && !k.includes("jatc-") && !k.includes("projects__")).length).toBe(0);
+  expect(Object.keys(cloud).some((k) => k.includes("records/team__"))).toBe(false);
+  // an old team file can't bring it back
+  await syncFiles(B, [teamFile]);
+  expect(await S(B, () => PT.store.get().projects.some((p) => p.name === "Doomed Roofing"))).toBe(false);
+  await B.goto("/#/teamproject"); await expect(B.locator("#invites")).not.toContainText("Doomed Roofing");
   expect(errs).toEqual([]);
 });
