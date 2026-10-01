@@ -184,9 +184,10 @@ test("joining brings your earlier work into the team; leaving takes it out and h
 const FAKE_FIREBASE = `
 (() => {
   const listeners = [];
+  const fix = (obj) => obj && Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, v && v.__serverTs ? Date.now() : v]));
   const col = (path, filt) => ({
-    doc: (id) => ({ _path: path + "/" + id, collection: (c) => col(path + "/" + id + "/" + c), set: (obj) => window.__relaySet([[path + "/" + id, obj]]) }),
-    where: (f, op, val) => col(path, (v) => v[f] === val),
+    doc: (id) => ({ _path: path + "/" + id, collection: (c) => col(path + "/" + id + "/" + c), set: (obj) => window.__relaySet([[path + "/" + id, fix(obj)]]) }),
+    where: (f, op, val) => col(path, (v) => (op === "==" ? v[f] === val : v[f] > val)),
     get: async () => ({ docs: Object.values(await window.__relayGet(path)).filter((v) => !filt || filt(v)).map((v) => ({ data: () => v })) }),
     onSnapshot(cb) {
       let seen = {};
@@ -199,9 +200,10 @@ const FAKE_FIREBASE = `
       return () => clearInterval(iv);
     },
   });
-  const db = { settings() {}, collection: (c) => col(c), batch() { const ops = []; return { set: (ref, obj) => ops.push([ref._path, obj]), delete: (ref) => ops.push([ref._path, null]), commit: () => window.__relaySet(ops) }; } };
+  const db = { settings() {}, collection: (c) => col(c), batch() { const ops = []; return { set: (ref, obj) => ops.push([ref._path, fix(obj)]), delete: (ref) => ops.push([ref._path, null]), commit: () => window.__relaySet(ops) }; } };
   const app = { auth: () => ({ signInAnonymously: async () => ({}), currentUser: { getIdToken: async () => "fake" } }), firestore: () => db };
-  window.firebase = { apps: [], initializeApp: () => { window.firebase.apps.push(app); return app; }, app: () => app };
+  window.firebase = { apps: [], initializeApp: () => { window.firebase.apps.push(app); return app; }, app: () => app,
+    firestore: { FieldValue: { serverTimestamp: () => ({ __serverTs: true }) }, Timestamp: { fromMillis: (m) => m } } };
 })();`;
 
 test("live sync: a teammate's change shows up by itself", async ({ browser }) => {
@@ -385,5 +387,31 @@ test("join by invite or team code (no files), company name required, turn in onl
   await T.goto("/instructor.html"); await T.click("#cloudBtn");
   await expect(T.locator("td[title^='3A PlanGrid']")).toHaveCount(1, { timeout: 10000 });
   await expect(T.locator("#main")).toContainText("Luis Herrera");
+  expect(errs).toEqual([]);
+});
+
+test("reopening a team project only downloads what changed (saves Firebase reads)", async ({ browser }) => {
+  const cloud = {};
+  const A = await cloudPage(browser, cloud, "Mateo Ramirez"), B = await cloudPage(browser, cloud, "Luis Herrera");
+  const errs = []; for (const p of [A, B]) p.on("pageerror", (e) => errs.push(e.message));
+  await A.goto("/#/teamproject"); await A.click("#startBtn"); await A.fill(".modal input[name=company]", "Golden Valley Roof Systems");
+  await A.check(".modal input[name=m][value='Luis Herrera']"); await A.click(".modal button[type=submit]");
+  await B.goto("/#/teamproject"); await expect(B.locator("[data-joininv]")).toBeVisible({ timeout: 10000 }); await B.click("[data-joininv]");
+  await expect.poll(() => S(B, () => PT.store.project().name), { timeout: 10000 }).toBe("Golden Valley Roof Systems");
+  await B.waitForTimeout(2500);
+  // count how many cloud documents B's live listener reads when the app is reopened
+  const dev = await B.evaluate(() => localStorage.getItem("pt-device"));
+  const mineBefore = Object.fromEntries(Object.entries(cloud).filter(([, v]) => v && v.by === dev).map(([k, v]) => [k, v.at]));
+  const total = Object.keys(cloud).filter((k) => k.includes("/records/") && !k.includes("jatc-")).length;
+  expect(await S(B, () => !!PT.store.get().teamLocal.sync[PT.store.project().id].seen)).toBe(true);
+  await S(A, () => PT.store.add("rfis", { number: PT.store.nextNumber("rfis"), subject: "After reopen", question: "q", status: "Open", createdBy: "Mateo Ramirez", sheetIds: [] }));
+  await B.reload();
+  await expect.poll(() => S(B, () => PT.store.list("rfis").some((r) => r.subject === "After reopen")), { timeout: 15000 }).toBe(true);
+  // after reopening, B doesn't upload again what it already uploaded
+  await B.waitForTimeout(2500);
+  const reup = Object.entries(mineBefore).filter(([k, at]) => cloud[k] && cloud[k].at !== at).length;
+  expect(Object.keys(mineBefore).length).toBeGreaterThan(5);
+  expect(reup).toBe(0);
+  expect(total).toBeGreaterThan(5);
   expect(errs).toEqual([]);
 });

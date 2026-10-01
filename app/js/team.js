@@ -128,6 +128,7 @@ PT.team = (() => {
   }
 
   /* ---------------- page ---------------- */
+  let inviteTimer = null;
   function page(root) {
     const tps = teamProjects(), active = store.project();
     root.innerHTML = `<div class="page-head"><h1>Team Project</h1><div class="actions">
@@ -140,8 +141,8 @@ PT.team = (() => {
       ${store.isInstructor() && live.available() ? `<section class="card" id="allTeams"><h2>👨‍🏫 All class teams</h2><p class="muted small">Every team project with live sync shows here. Tap <b>Follow</b> to open it on this device – you're a member of every team and see their work live.</p><div id="dirList" class="muted">Loading…</div></section>` : ""}
       ${tps.length ? tps.map((p) => card(p, p.id === active?.id)).join("") : `<div class="card"><p class="muted">You're not on a team project yet. Start one, or open the team file a teammate sent you with <b>Join / sync</b>.</p></div>`}`;
     $("#codeBtn", root) && ($("#codeBtn", root).onclick = codeForm);
-    if ($("#invites", root)) live.directory().then((list) => {
-      const el = $("#invites", root); if (!el) return;
+    const loadInvites = () => live.directory().then((list) => {
+      const el = $("#invites", root); if (!el || !document.body.contains(el)) return;
       const mine = list.filter((d) => (d.members || []).includes(me()) && !(store.get().projects.find((p) => p.id === d.id && live.isOn(d.id)))
         && store.get().projects.find((p) => p.id === d.id)?.team?.memberLog?.[me()]?.in !== false);
       el.innerHTML = mine.length ? `<section class="card" style="border-color:#2e9e44"><h2>📨 Team invites for you</h2>${mine.map((d) => `<div class="row gap" style="justify-content:space-between;flex-wrap:wrap;margin:6px 0">
@@ -149,6 +150,18 @@ PT.team = (() => {
         <button class="btn btn-primary btn-sm" data-joininv="${esc(d.id)}">Join team</button></div>`).join("")}</section>` : "";
       $$("[data-joininv]", el).forEach((b) => (b.onclick = () => joinOnline(mine.find((d) => d.id === b.dataset.joininv))));
     }).catch(() => {});
+    if ($("#invites", root)) {
+      loadInvites();
+      // keep looking for new invites while this page is open (a few reads a minute)
+      clearInterval(inviteTimer);
+      inviteTimer = setInterval(() => { if (!location.hash.startsWith("#/teamproject") || !document.body.contains($("#invites", root) || document.createElement("i"))) { clearInterval(inviteTimer); return; } if (!document.hidden) loadInvites(); }, 45000);
+    }
+    // make sure each of my live teams is listed in the class directory (re-done when the members change)
+    for (const p of teamProjects()) if (live.isOn(p.id) && (p.team.members || []).includes(me())) {
+      const sig = (p.team.members || []).join("|") + "|" + p.name;
+      const sy = ((store.get().teamLocal ||= { imported: {}, movedOut: {} }).sync ||= {});
+      if ((sy[p.id] || {}).reg !== sig) live.register(p.id).then(() => { sy[p.id] = { ...(sy[p.id] || {}), reg: sig }; }).catch(() => {});
+    }
     if ($("#dirList", root)) live.directory().then((list) => {
       const el = $("#dirList", root); if (!el) return;
       list.sort((a, b) => String(b.at).localeCompare(String(a.at)));
@@ -240,6 +253,14 @@ PT.team = (() => {
       return fb;
     }
     const docId = (k) => k.replace("/", "__");
+    // Saving Firebase reads: remember (on this device) the newest server time we've seen for each team and the last time
+    // we pushed – so opening the app only downloads what changed since last time, and only uploads what changed here.
+    // kept with the project data itself (a Reset or a fresh device starts over with a full download)
+    const syncAll = () => ((store.get().teamLocal ||= { imported: {}, movedOut: {} }).sync ||= {});
+    const syncInfo = (pid) => syncAll()[pid] || {};
+    const setSync = (pid, patch) => { syncAll()[pid] = { ...syncInfo(pid), ...patch }; };
+    const ms = (st) => (st == null ? null : typeof st === "number" ? st : st.toMillis ? st.toMillis() : null);
+    const serverTime = () => window.firebase.firestore.FieldValue.serverTimestamp();
     function docFor(k) {
       const [coll, id] = k.split("/"), st = store.get();
       if (coll === "tombstones") { const t = st.tombstones?.[id]; return t && { coll, id, pid: t.projectId, data: JSON.stringify(t) }; }
@@ -254,7 +275,7 @@ PT.team = (() => {
         for (const d of docs.slice(i, i + 300)) {
           if (d.coll === "sheets" && d.data.includes('"Practice set"')) continue; // every teammate loads the practice plans with one tap
           if (d.data.length > 950000) { if (!warnedBig) { toast("A plan sheet is too big for live sync – send it with the team file instead", "warn"); warnedBig = true; } continue; }
-          batch.set(c.col.doc(docId(d.coll + "/" + d.id)), { coll: d.coll, id: d.id, data: d.data, by: device, at: new Date().toISOString() });
+          batch.set(c.col.doc(docId(d.coll + "/" + d.id)), { coll: d.coll, id: d.id, data: d.data, by: device, at: new Date().toISOString(), st: serverTime() });
         }
         await batch.commit();
       }
@@ -278,21 +299,31 @@ PT.team = (() => {
       const p = store.get().projects.find((x) => x.id === pid); if (!p?.team) return;
       if (!p.team.code) { p.team.code = code(); p.updatedAt = new Date().toISOString(); store.emit(); }
       await firebase();
-      register(pid).catch(() => {});
+      register(pid).catch((e) => console.warn("team directory:", e.message));
       const col = fb.db.collection("teams").doc(p.team.code).collection("records");
       conns[pid] = { col, status: "· connecting" };
       let first = true;
-      conns[pid].unsub = col.onSnapshot((snap) => {
-        const docs = snap.docChanges().filter((ch) => ch.type !== "removed").map((ch) => ch.doc.data()).filter((d) => d.by !== device || first);
+      // already have this team on this device? only ask for what changed since (minus 5 min of overlap)
+      const seen = syncInfo(pid).seen;
+      const q = seen ? col.where("st", ">", window.firebase.firestore.Timestamp.fromMillis(seen - 300000)) : col;
+      conns[pid].unsub = q.onSnapshot((snap) => {
+        const raw = snap.docChanges().filter((ch) => ch.type !== "removed").map((ch) => ch.doc.data());
+        let top = syncInfo(pid).seen || 0; for (const d of raw) { const m = ms(d.st); if (m && m > top) top = m; }
+        if (top) setSync(pid, { seen: top });
+        const docs = raw.filter((d) => d.by !== device || first);
         if (docs.length) applyDocs(pid, docs);
-        if (first) { first = false; conns[pid].status = "· on"; if (!store.isInstructor()) pushAll(pid); if (location.hash.startsWith("#/teamproject") && !document.querySelector(".modal-backdrop")) PT.app.route(); }
+        if (first) { first = false; conns[pid].status = "· on"; if (!store.isInstructor()) pushAll(pid, syncInfo(pid).pushed); if (location.hash.startsWith("#/teamproject") && !document.querySelector(".modal-backdrop")) PT.app.route(); }
       }, (e) => { conns[pid].status = "· error: " + e.message; });
       if (!timer) timer = setInterval(flush, 1500);
     }
-    function pushAll(pid) {
-      const sh = store.shareFor(pid);
-      const keys = ["projects/" + pid, ...Object.entries(sh.records).flatMap(([c, rs]) => rs.map((r) => c + "/" + r.id)), ...Object.keys(sh.tombstones).map((id) => "tombstones/" + id)];
-      return pushKeys(pid, keys);
+    // upload this device's copy – everything the first time, afterwards only what changed since the last upload
+    async function pushAll(pid, since = "") {
+      const sh = store.shareFor(pid), startedAt = new Date().toISOString();
+      const newer = (r) => !since || String(r.updatedAt || r.createdAt || "") > since;
+      const keys = [...(newer(sh.project || {}) ? ["projects/" + pid] : []), ...Object.entries(sh.records).flatMap(([c, rs]) => rs.filter(newer).map((r) => c + "/" + r.id)),
+        ...Object.entries(sh.tombstones).filter(([, tb]) => !since || String(tb.at) > since).map(([id]) => "tombstones/" + id)];
+      await pushKeys(pid, keys);
+      setSync(pid, { pushed: startedAt });
     }
     function flush() {
       const keys = store.takeChanges(); if (!keys.length) return;

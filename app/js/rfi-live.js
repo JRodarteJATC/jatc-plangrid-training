@@ -123,7 +123,7 @@ PT.rfiLive = (() => {
         if (out.length) {
           const { db, col: c } = await col();
           const b = db.batch();
-          for (const { r, data } of out) b.set(c.doc("rfi__" + (r.copiedFrom || r.id)), { coll: "rfi", id: r.copiedFrom || r.id, data, by: me, at: new Date().toISOString() });
+          for (const { r, data } of out) b.set(c.doc("rfi__" + (r.copiedFrom || r.id)), { coll: "rfi", id: r.copiedFrom || r.id, data, by: me, at: new Date().toISOString(), st: window.firebase.firestore.FieldValue.serverTimestamp() });
           await b.commit();
           for (const { r, data } of out) { sent[r.id] = data.length + ":" + (r.updatedAt || "") + ":" + r.status + ":" + (r.answer || "").length; pushed[r.copiedFrom || r.id] = 1; }
           write("pt-rfi-live-sent", sent); write("pt-rfi-live-roots", pushed);
@@ -146,11 +146,20 @@ PT.rfiLive = (() => {
         };
         if (!listening) {
           listening = true;
-          c.where("coll", "==", "answer").onSnapshot((snap) => takeAnswers(snap.docChanges().map((ch) => ch.doc)), (e) => { listening = false; console.warn("RFI answers", e); });
+          // first time on this device: all answers; afterwards only what's new since last time (Firebase counts every read)
+          const seenAns = +(read("pt-rfi-ans-seen", 0)) || 0;
+          const q = seenAns ? c.where("st", ">", window.firebase.firestore.Timestamp.fromMillis(seenAns - 300000)) : c.where("coll", "==", "answer");
+          q.onSnapshot((snap) => {
+            const docs = snap.docChanges().map((ch) => ch.doc);
+            let top = +(read("pt-rfi-ans-seen", 0)) || 0;
+            for (const doc of docs) { const st = doc.data().st, m = st == null ? null : typeof st === "number" ? st : st.toMillis ? st.toMillis() : null; if (m && m > top) top = m; }
+            if (top) write("pt-rfi-ans-seen", top);
+            takeAnswers(docs.filter((doc) => doc.data().coll === "answer"));
+          }, (e) => { listening = false; console.warn("RFI answers", e); });
         }
-        // backup check for NEW answers (at most once a minute, only while an RFI is waiting) in case live updates are delayed
+        // backup check for NEW answers (at most every 2 minutes, only while an RFI is waiting) in case live updates are delayed
         const open = mine.filter((r) => !r.answer);
-        if (open.length && Date.now() - lastAnsCheck > 60000) {
+        if (open.length && Date.now() - lastAnsCheck > 120000) {
           lastAnsCheck = Date.now();
           const { restQuery } = await col();
           await restQuery(INBOX, "at", ">", ansSince).then((docs) => { for (const d of docs) if (d.at > ansSince) ansSince = d.at; takeAnswers(docs.filter((d) => d.coll === "answer")); }).catch(() => {});
@@ -182,14 +191,14 @@ PT.rfiLive = (() => {
     };
     col().then(({ col: c, rest, restQuery }) => {
       c.onSnapshot((snap) => { const ch = snap.docChanges(); take(ch.filter((x) => x.type !== "removed").map((x) => x.doc), false, ch.filter((x) => x.type === "removed").map((x) => x.doc.data())); }, (e) => console.warn("RFI inbox live:", e.message));
-      // backup over plain HTTPS in case the network delays live updates: one full read at the start, then every 30 s
+      // backup over plain HTTPS in case the network delays live updates: one full read at the start, then once a minute
       // ask only for what changed (Firebase's free plan counts every document read)
       let since = "";
       const mark = (docs) => { for (const doc of docs) { const a = doc.data().at; if (a > since) since = a; } };
       const fail = (e) => { status = "offline (" + e.message + ")"; onUpdate && onUpdate("status"); };
       rest().then((snap) => { mark(snap.docs); take(snap.docs, true); }).catch(fail);
       const poll = () => { if (!since) return; restQuery(INBOX, "at", ">", since).then((docs) => { mark(docs); take(docs); }).catch(fail); };
-      setInterval(poll, 30000);
+      setInterval(poll, 60000);
       document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
     }).catch((e) => { status = "offline (" + e.message + ")"; onUpdate && onUpdate(); });
   }
@@ -200,7 +209,7 @@ PT.rfiLive = (() => {
       const b = db.batch();
       for (const id of ids.slice(i, i + 150)) {
         b.delete(c.doc("rfi__" + id)); b.delete(c.doc("answer__" + id));
-        b.set(c.doc("del__" + id), { coll: "deleted", id, data: JSON.stringify({ id, at: now }), by: "Instructor", at: now });
+        b.set(c.doc("del__" + id), { coll: "deleted", id, data: JSON.stringify({ id, at: now }), by: "Instructor", at: now, st: window.firebase.firestore.FieldValue.serverTimestamp() });
       }
       await b.commit();
     }
@@ -239,7 +248,7 @@ PT.rfiLive = (() => {
     const { db, col: c } = await col();
     for (let i = 0; i < answers.length; i += 300) {
       const b = db.batch();
-      for (const a of answers.slice(i, i + 300)) b.set(c.doc("answer__" + a.id), { coll: "answer", id: a.id, data: JSON.stringify(a), by: a.answeredBy || "Instructor", at: new Date().toISOString() });
+      for (const a of answers.slice(i, i + 300)) b.set(c.doc("answer__" + a.id), { coll: "answer", id: a.id, data: JSON.stringify(a), by: a.answeredBy || "Instructor", at: new Date().toISOString(), st: window.firebase.firestore.FieldValue.serverTimestamp() });
       await b.commit();
     }
     for (const a of answers) liveAns[a.id] = a;
