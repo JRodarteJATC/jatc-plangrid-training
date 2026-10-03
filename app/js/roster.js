@@ -24,7 +24,7 @@ PT.roster = (() => {
     "Harbor Point Waterproofing", "Delta Breeze Roofing, Inc.", "High Desert Roof & Sheet Metal", "Mission Trail Roofing Co.",
   ];
   const PRACTICE_COMPANIES = COMPANIES;
-  // Practice (made-up) class list – 11 apprentices, each with a random roster number 1–11 and a made-up employer.
+  // Practice (made-up) class list – 16 apprentices, each with a roster number 1–16 and a made-up employer.
   const APPRENTICES = [
     [11, "Mateo Ramirez", "Sierra Summit Roofing, Inc."],
     [8, "Luis Herrera", "Kings River Roofing & Sheet Metal"],
@@ -37,6 +37,11 @@ PT.roster = (() => {
     [4, "Marco Salazar", "Golden Valley Roof Systems"],
     [10, "Ivan Contreras", "Sequoia Commercial Roofing"],
     [5, "Tony Guzman", "San Joaquin Roof & Deck Co."],
+    [14, "Diego Fuentes", "Sequoia Commercial Roofing"],
+    [12, "Carlos Medina", "Mother Lode Roofing & Waterproofing"],
+    [16, "Javier Robles", "Golden Valley Roof Systems"],
+    [13, "Miguel Zamora", "Sierra Summit Roofing, Inc."],
+    [15, "Eduardo Pineda", "Redwood Empire Roof Systems"],
   ].map(([no, name, company]) => ({ no, name, company, role: "Apprentice", email: practiceEmail(name), phone: "" })).sort((a, b) => a.no - b.no);
   const EMPLOYERS = [...new Set(APPRENTICES.map((a) => a.company))];
 
