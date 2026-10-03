@@ -221,11 +221,12 @@ test("3A project: daily report logs, time sheet, task watchers and RFI sent date
     const S = PT.store, me = "Proj Tester", sh = S.list("sheets").find((s) => s.number === "R-101");
     const ph = S.list("photos")[0].id;
     for (let d = 2; d <= 5; d++) {
-      const date = `2026-10-0${d}`;
+      const t0 = new Date(PT.util.today() + "T12:00:00"); t0.setDate(t0.getDate() - d); // four other days, never today's
+      const date = t0.toISOString().slice(0, 10);
       S.add("reports", { type: "Daily Report", date, status: "Submitted", createdBy: me, crew: [{ trade: "JW", count: "3" }], workPerformed: "Installed tapered insulation and cover board, Area B grid 5-8.", materials: [{ material: "Polyiso", qty: "20" }], equipmentLog: [{ name: "Hoist" }], notes: "Wind picked up after lunch; covered stock and tied down.", photoIds: d < 4 ? [ph] : [] });
       S.add("reports", { type: "Time Sheet", date, status: "Submitted", createdBy: me, workers: [{ name: me, classification: "Apprentice", hours: 8 }] });
     }
-    const first = S.list("reports").find((r) => r.type === "Daily Report" && r.createdBy === me && !["2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"].includes(r.date));
+    const first = S.list("reports").find((r) => r.type === "Daily Report" && r.createdBy === me && /^Installed base sheet/.test(r.workPerformed)); // the one made in the form above (whatever today's date is)
     const ts = S.list("reports").find((r) => r.type === "Time Sheet" && r.createdBy === me && r.date === first.date); ts.workers[0].classification = "Apprentice";
     S.add("docs", { name: "Cap sheet data.pdf", folder: "Materials", kind: "pdf", uploadedBy: me });
     S.add("docs", { name: "Primer SDS.pdf", folder: "Materials", kind: "pdf", uploadedBy: me });

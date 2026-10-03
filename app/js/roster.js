@@ -8,7 +8,7 @@ PT.roster = (() => {
 
   // Instructor mode in the apprentice app needs a passcode (only its SHA-256 is stored here; the passcode is in the
   // CONFIDENTIAL Instructor Packet). Change it: sha256("plan-trainer:" + NEWCODE in capitals).
-  const INSTRUCTOR_PASS_SHA256 = "5952f52d9d996db68facb8f7c3a8a4c165fcf7da53858bf759e4af1c571865dc";
+  const INSTRUCTOR_PASS_SHA256 = "685ce0be4349c38906dace75b21617f02feb66eed79b7db1a2a978eecd49c251";
   const isInstructorName = (n) => !!n && (n.trim().toLowerCase() === INSTRUCTOR.name.toLowerCase());
   async function checkPasscode(code) {
     const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("plan-trainer:" + String(code || "").trim().toUpperCase()));

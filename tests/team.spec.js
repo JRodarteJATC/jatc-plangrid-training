@@ -419,7 +419,7 @@ test("reopening a team project only downloads what changed (saves Firebase reads
   expect(await S(B, () => !!PT.store.get().teamLocal.sync[PT.store.project().id].seen)).toBe(true);
   await S(A, () => PT.store.add("rfis", { number: PT.store.nextNumber("rfis"), subject: "After reopen", question: "q", status: "Open", createdBy: "Mateo Ramirez", sheetIds: [] }));
   await B.reload();
-  await expect.poll(() => S(B, () => PT.store.list("rfis").some((r) => r.subject === "After reopen")), { timeout: 15000 }).toBe(true);
+  await expect.poll(() => S(B, () => !!PT.store.get() && PT.store.list("rfis").some((r) => r.subject === "After reopen")), { timeout: 15000 }).toBe(true);
   // after reopening, B doesn't upload again what it already uploaded
   await B.waitForTimeout(2500);
   const reup = Object.entries(mineBefore).filter(([k, at]) => cloud[k] && cloud[k].at !== at).length;
